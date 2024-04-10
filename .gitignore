@@ -9,5 +9,5 @@ model_output/
 models/
 
 *.png
-*.jpg
+# *.jpg
 *.log
