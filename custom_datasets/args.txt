@@ -3,7 +3,7 @@ python textual_inversion.py \
 accelerate launch textual_inversion.py \
 --pretrained_model_name_or_path="stabilityai/stable-diffusion-2" \
 --train_data_dir="custom_datasets/pothole" \
---output_dir="model_output/exp2" \
+--output_dir="model_output/exp3" \
 --placeholder_token="<pothole>" \
 --initializer_token="road" \
 --report_to="wandb" \
