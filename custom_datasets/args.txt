@@ -25,11 +25,11 @@ accelerate launch scripts/train_dreambooth_inpaint.py \
   --instance_data_dir="custom_datasets/pothole" \
   --output_dir="model_output/db_inp_exp1" \
   --instance_prompt="a photo of sks pothole" \
-  --resolution=512 \
+  --resolution=256 \
   --train_batch_size=1 \
   --gradient_accumulation_steps=1 \
   --learning_rate=5e-6 \
   --lr_scheduler="constant" \
   --lr_warmup_steps=0 \
   --max_train_steps=400 \
-  --report_to="wandb" \
+  --report_to="wandb" 
