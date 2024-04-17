@@ -25,19 +25,19 @@ else
     exit 1
 fi
 
-if [ $# != 1 ]; then
-    echo "Usage:
-          bash start.sh [DATASETS_DIR]
-        "
-    exit 1
-fi
+# if [ $# != 1 ]; then
+#     echo "Usage:
+#           bash start.sh [DATASETS_DIR]
+#         "
+#     exit 1
+# fi
 
-DATASETS_DIR=$(get_real_path "$1")
+# DATASETS_DIR=$(get_real_path "$1")
 
-if [ ! -d $DATASETS_DIR ]; then
-    echo "Error: DATASETS_DIR=$DATASETS_DIR is not an existing directory."
-    exit 1
-fi
+# if [ ! -d $DATASETS_DIR ]; then
+#     echo "Error: DATASETS_DIR=$DATASETS_DIR is not an existing directory."
+#     exit 1
+# fi
 
 PROJECT_ROOT_DIR=$(cd ./"`dirname $0`"/.. || exit; pwd)
 
@@ -49,7 +49,6 @@ docker run -it -d --rm \
     --name ${USER}_diffdepth \
     --net host \
     -v $PROJECT_ROOT_DIR:/home/docker_diffdepth/diff_depth_new:rw \
-    -v $DATASETS_DIR:/home/docker_diffdepth/Datasets:rw \
     diffdepth:$DEVICE-$USER
 
 docker exec --user root \

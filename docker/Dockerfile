@@ -39,20 +39,6 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
 # symlink for python3
 RUN ln -s /usr/bin/python3 /usr/bin/python
 
-ENV PATH="/home/${USER}/.local/bin:$PATH"
-
-# create venv
-ENV VIRTUAL_ENV="/home/${USER}/.venv"
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
-RUN python -m venv $VIRTUAL_ENV
-
-RUN pip install -r requirements.txt
-
-# upgrade pip
-ARG PIP_VERSION=23.3.1
-ARG SETUPTOOLS_VERSION=68.2.2
-RUN pip install pip==${PIP_VERSION} setuptools==${SETUPTOOLS_VERSION}
-
 # add user and his password
 ENV USER=docker_diffdepth
 ARG UID=1000
@@ -68,3 +54,20 @@ RUN mkdir diff_depth_new && chown -R ${UID}:${GID} /home/${USER}
 # RUN mkdir Datasets && chown -R ${UID}:${GID} /home/${USER}
 
 USER ${UID}:${GID}
+
+ENV PATH="/home/${USER}/.local/bin:$PATH"
+
+# create venv
+ENV VIRTUAL_ENV="/home/${USER}/.venv"
+ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+RUN python -m venv $VIRTUAL_ENV
+
+# RUN pip install -r requirements.txt
+
+COPY requirements.txt /tmp/requirements.txt
+RUN python3 -m pip install -r /tmp/requirements.txt
+
+# upgrade pip
+ARG PIP_VERSION=23.3.1
+ARG SETUPTOOLS_VERSION=68.2.2
+RUN pip install pip==${PIP_VERSION} setuptools==${SETUPTOOLS_VERSION}
