@@ -1,4 +1,6 @@
 diff_depth/
+diff/
+
 __pycache__
 .DS_Store
 images/output_imgs/exp3

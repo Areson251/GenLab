@@ -11,8 +11,8 @@ import time
 class GradioWindow():
     def __init__(self) -> None:
         self.path_to_orig_imgs = "images/orig_imgs"
-        self.path_to_output_imgs = "images/output_imgs/exp2_potholes"
-        self.path_to_prompts = "prompts/pothole.txt"
+        self.path_to_output_imgs = "images/output_imgs/mem"
+        self.path_to_prompts = "prompts/mem.txt"
         self.path_to_negative_prompts = "images/negative_prompts.txt"
         self.path_to_logs = "out.log"
 
