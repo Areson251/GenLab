@@ -2,16 +2,16 @@ python textual_inversion.py \
 
 поиграться с learning rate!!!
 
-accelerate launch textual_inversion.py \
+accelerate launch scripts/textual_inversion.py \
 --pretrained_model_name_or_path="stabilityai/stable-diffusion-2" \
---train_data_dir="custom_datasets/pothole" \
---output_dir="model_output/exp3" \
---placeholder_token="<pothole>" \
---initializer_token="road" \
+--train_data_dir="custom_datasets/cat-avocado" \
+--output_dir="model_output/exp_cat-avocado" \
+--placeholder_token="<cat-avocado>" \
+--initializer_token="toys" \
 --report_to="wandb" \
 --train_batch_size=1 \
 --max_train_steps=3000 \
---validation_prompt="A pothole" \
+--validation_prompt="A <cat-avocado> on the beach" \
 --num_validation_images=1 \
 --validation_steps=500 
 
