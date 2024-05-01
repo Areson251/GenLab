@@ -11,11 +11,11 @@ import time
 
 class GradioWindow():
     def __init__(self) -> None:
-        self.path_to_orig_imgs = "images/orig_imgs"
-        self.path_to_output_imgs = "images/dreambooth_experiments_inpaint"
-        self.path_to_prompts = "prompts/pothole2.txt"
-        self.path_to_negative_prompts = "images/negative_prompts.txt"
-        self.path_to_logs = "out.log"
+        self.path_to_orig_imgs = None
+        self.path_to_output_imgs = None
+        self.path_to_prompts = None
+        self.path_to_negative_prompts = None
+        self.path_to_logs = None
 
         self.original_img = None
         self.masks = None
@@ -30,10 +30,10 @@ class GradioWindow():
 
         self.folders = [self.path_to_orig_imgs, self.path_to_output_imgs]
 
-        self.check_folders()
-        self.start_logging()
-        self.read_prompts()
-        self.load_models()
+        # self.check_folders()
+        # self.start_logging()
+        # self.read_prompts()
+        # self.load_models()
 
         self.main()
 
@@ -60,10 +60,18 @@ class GradioWindow():
 
     def main(self):
         with gr.Blocks() as self.demo:
-            self.input_img = gr.ImageEditor(
-                type="pil",
-                label="Input",
-            )
+            with gr.Row():
+                self.input_img = gr.ImageEditor(
+                    type="pil",
+                    label="Input",
+                )
+                with gr.Column():
+                    self.path_to_orig_imgs = gr.Textbox(label="Images path", value="images/orig_imgs")
+                    self.path_to_output_imgs = gr.Textbox(label="Output path", value="images/output_imgs/mem")
+                    self.path_to_prompts = gr.Textbox(label="Prompt path", value="prompts/mem.txt")
+                    self.path_to_negative_prompts = gr.Textbox(label="Negative prompt path", value="images/negative_prompts.txt")
+                    self.path_to_logs = gr.Textbox(label="Logs file name", value="out.log")
+                    self.setup_settings = gr.Button("Set up")
 
             with gr.Row():
                 self.im_out_1 = gr.Image(type="pil", label="original")
@@ -82,10 +90,14 @@ class GradioWindow():
                 self.stable_diffusion_image = gr.Image(label="Stable Diffusion")
 
             # Connect the UI and logic
+            self.setup_settings.click(
+                self.setup,
+            )
+
             self.input_img.change(
                 self.get_mask, 
                 outputs=[self.im_out_1, self.im_out_2, self.im_out_3], 
-                inputs=self.input_img
+                inputs=self.input_img,
             )
 
             # TODO: rewrite to cycle for each model
@@ -97,6 +109,11 @@ class GradioWindow():
             )
 
      # Define the logic
+    def setup(self):
+        self.check_folders()
+        self.start_logging()
+        self.read_prompts()
+
     def get_mask(self, input_img):
         self.original_img = input_img["background"]
         mask = input_img["layers"][0]
