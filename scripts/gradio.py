@@ -3,16 +3,17 @@ import numpy as np
 import torch
 from PIL import Image
 import gradio as gr
-from .stable_diffusion import StableDiffusionModel
-from .kandinsky import KandinskyModel
+# from .stable_diffusion import StableDiffusionModel
+from .sd_inpaint_dreambooth import StableDiffusionModel
+# from .kandinsky import KandinskyModel
 import logging
 import time 
 
 class GradioWindow():
     def __init__(self) -> None:
         self.path_to_orig_imgs = "images/orig_imgs"
-        self.path_to_output_imgs = "images/output_imgs/mem"
-        self.path_to_prompts = "prompts/mem.txt"
+        self.path_to_output_imgs = "images/dreambooth_experiments_inpaint"
+        self.path_to_prompts = "prompts/pothole2.txt"
         self.path_to_negative_prompts = "images/negative_prompts.txt"
         self.path_to_logs = "out.log"
 
@@ -134,7 +135,7 @@ class GradioWindow():
                 self.logger.info(f"{model_name} generated time: "+str(curr_time-start_time))
                 self.save_img(self.stable_diffusion_image, f"{model_name}_"+prompt)
             except Exception as error:
-                self.logger.info(f"ERROR WITH GENERATING IMAGE VIA {model_name}: "+error)
+                self.logger.info(f"ERROR WITH GENERATING IMAGE VIA {model_name}: ",+error)
                 print(f"ERROR WITH GENERATING IMAGE VIA {model_name}: ", error)
 
     def inpaint_image(self, iter_number, guidance_scale):
@@ -147,15 +148,16 @@ class GradioWindow():
             model_name="SD2",
         )
 
-        self.logger.info(f"Turn TEXTUAL INVERSION ON")
-        self.stable_diffusion.load_textual_inversion()
+        # self.logger.info(f"TURN DREAMBOOTH ON")
+        # self.logger.info(f"Turn TEXTUAL INVERSION ON")
+        # self.stable_diffusion.load_textual_inversion()
 
-        self.generating_image(
-            image, mask,
-            iter_number, guidance_scale,
-            w_orig, h_orig, 
-            model_name="SD2_tuned",
-        )
+        # self.generating_image(
+        #     image, mask,
+        #     iter_number, guidance_scale,
+        #     w_orig, h_orig, 
+        #     model_name="SD2_tuned",
+        # )
 
             # try:
             #     self.logger.info("Generate KAND with prompt: "+prompt)

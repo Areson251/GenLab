@@ -33,6 +33,10 @@ from diffusers.utils import check_min_version, is_wandb_available
 if is_wandb_available():
     import wandb
 
+from huggingface_hub import login
+
+login()
+
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
 check_min_version("0.13.0.dev0")
