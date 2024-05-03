@@ -1,7 +1,8 @@
 from kandinsky3 import get_inpainting_pipeline
 import torch
 
-device_map = torch.device('mps')
+# device_map = torch.device('mps')
+device_map = torch.device('cuda:1')
 # device_map = torch.device('cuda:0')
 print("dtype_map")
 dtype_map = {

@@ -36,6 +36,8 @@ def zero_module(module):
     return module
 
 def resize_mask_for_diffusion(mask):
+    # print("MASK: ", type(mask), mask)
+    mask = np.array(mask)
     reduce_factor = max(1, (mask.size / 1024**2)**0.5)
     resized_mask = resize(
         mask,

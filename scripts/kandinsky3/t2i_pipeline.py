@@ -5,11 +5,11 @@ import torch
 import torchvision.transforms as T
 from einops import repeat
 
-from kandinsky3.model.unet import UNet
-from kandinsky3.movq import MoVQ
-from kandinsky3.condition_encoders import T5TextConditionEncoder
-from kandinsky3.condition_processors import T5TextConditionProcessor
-from kandinsky3.model.diffusion import BaseDiffusion, get_named_beta_schedule
+from scripts.kandinsky3.model.unet import UNet
+from scripts.kandinsky3.movq import MoVQ
+from scripts.kandinsky3.condition_encoders import T5TextConditionEncoder
+from scripts.kandinsky3.condition_processors import T5TextConditionProcessor
+from scripts.kandinsky3.model.diffusion import BaseDiffusion, get_named_beta_schedule
 
 
 class Kandinsky3T2IPipeline:

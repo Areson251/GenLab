@@ -6,6 +6,7 @@ import gradio as gr
 # from .stable_diffusion import StableDiffusionModel
 from .sd_inpaint_dreambooth import StableDiffusionModel
 # from .kandinsky import KandinskyModel
+from .kandinsky_3 import Kandinsky3Model
 import logging
 import time 
 
@@ -28,12 +29,7 @@ class GradioWindow():
         self.sd_avg_time = 0
         self.kandinsky_avg_time = 0
 
-        self.folders = [self.path_to_orig_imgs, self.path_to_output_imgs]
-
-        # self.check_folders()
-        # self.start_logging()
-        # self.read_prompts()
-        # self.load_models()
+        self.folders = []
 
         self.main()
 
@@ -54,8 +50,9 @@ class GradioWindow():
             self.logger.info("Use prompts from "+self.path_to_prompts)
 
     def load_models(self):
-        self.stable_diffusion = StableDiffusionModel()
+        # self.stable_diffusion = StableDiffusionModel()
         # self.kandinsky = KandinskyModel()
+        self.kandinsky = Kandinsky3Model()
         self.logger.info("Models loaded")
 
     def main(self):
@@ -66,11 +63,11 @@ class GradioWindow():
                     label="Input",
                 )
                 with gr.Column():
-                    self.path_to_orig_imgs = gr.Textbox(label="Images path", value="images/orig_imgs")
-                    self.path_to_output_imgs = gr.Textbox(label="Output path", value="images/output_imgs/mem")
-                    self.path_to_prompts = gr.Textbox(label="Prompt path", value="prompts/mem.txt")
-                    self.path_to_negative_prompts = gr.Textbox(label="Negative prompt path", value="images/negative_prompts.txt")
-                    self.path_to_logs = gr.Textbox(label="Logs file name", value="out.log")
+                    self.orig_imgs = gr.Textbox(label="Images path", value="images/left_label/left")
+                    self.output_imgs = gr.Textbox(label="Output path", value="images/output_imgs/K3")
+                    self.prompts = gr.Textbox(label="Prompt path", value="prompts/pothole.txt")
+                    self.negative_prompts = gr.Textbox(label="Negative prompt path", value="images/negative_prompts.txt")
+                    self.logs = gr.Textbox(label="Logs file name", value="out.log")
                     self.setup_settings = gr.Button("Set up")
 
             with gr.Row():
@@ -81,9 +78,12 @@ class GradioWindow():
             with gr.Row():
                 # self.positive_prompt = gr.Textbox(label="Positive prompt")
                 # self.negative_prompt = gr.Textbox(label="Negative prompt")
-                self.iter_number = gr.Number(value=20, label="Steps")
-                self.guidance_scale = gr.Number(value=0.7, label="Guidance Scale")
-                self.enter_prompt = gr.Button("Enter prompt")
+                 with gr.Column():
+                    self.iter_number = gr.Number(value=20, label="Steps")
+                    self.guidance_scale = gr.Number(value=0.7, label="Guidance Scale")
+                 with gr.Column():
+                    self.button_load_models = gr.Button("Load models") 
+                    self.button_enter_prompt = gr.Button("Enter prompt")     
 
             with gr.Row():
                 self.kandinsky_image = gr.Image(label="Kandinsky")
@@ -92,6 +92,13 @@ class GradioWindow():
             # Connect the UI and logic
             self.setup_settings.click(
                 self.setup,
+                inputs=[
+                    self.orig_imgs,
+                    self.output_imgs,
+                    self.prompts,
+                    self.negative_prompts,
+                    self.logs,
+                ],
             )
 
             self.input_img.change(
@@ -100,8 +107,15 @@ class GradioWindow():
                 inputs=self.input_img,
             )
 
+            self.button_load_models.click(
+                self.load_models,
+                # inputs=[self.positive_prompt, self.negative_prompt],
+                # inputs=[self.iter_number, self.guidance_scale],
+                # outputs=[self.kandinsky_image, self.stable_diffusion_image],
+            )
+
             # TODO: rewrite to cycle for each model
-            self.enter_prompt.click(
+            self.button_enter_prompt.click(
                 self.inpaint_image,
                 # inputs=[self.positive_prompt, self.negative_prompt],
                 inputs=[self.iter_number, self.guidance_scale],
@@ -109,10 +123,22 @@ class GradioWindow():
             )
 
      # Define the logic
-    def setup(self):
+    def setup(self, path_to_orig_imgs, path_to_output_imgs, path_to_prompts, path_to_negative_prompts, path_to_logs):
+        print("START SETUP")
+        self.path_to_orig_imgs = path_to_orig_imgs
+        self.path_to_output_imgs = path_to_output_imgs
+        self.path_to_prompts = path_to_prompts
+        self.path_to_negative_prompts = path_to_negative_prompts
+        self.path_to_logs = path_to_logs
+
+        self.folders = [self.path_to_orig_imgs, self.path_to_output_imgs]
+
         self.check_folders()
         self.start_logging()
         self.read_prompts()
+        # self.load_models()
+
+        print("START DONE")
 
     def get_mask(self, input_img):
         self.original_img = input_img["background"]
@@ -137,59 +163,45 @@ class GradioWindow():
         self.logger.info("New mask shape: "+str(np.array(mask).shape))
         return image, mask, w_orig, h_orig
     
-    def generating_image(self, image, mask, iter_number, guidance_scale, w_orig, h_orig, model_name=""):
+    def sd_generating_image(self, diffusion_model, image, mask, iter_number, guidance_scale, w_orig, h_orig, model_name=""):
         for prompt in self.prompts:
             try:
                 self.logger.info(f"Generate {model_name} with prompt: "+prompt)
                 # TODO: write common AutoPipelineForInpainting for all models
                 start_time = time.time()
-                self.stable_diffusion_image = self.stable_diffusion.diffusion_inpaint(
+                generated_image = diffusion_model.diffusion_inpaint(
                     image, mask, prompt, None, w_orig, h_orig, 
                     iter_number, guidance_scale,
                 )
                 curr_time = time.time()
                 self.sd_avg_time += curr_time-start_time
                 self.logger.info(f"{model_name} generated time: "+str(curr_time-start_time))
-                self.save_img(self.stable_diffusion_image, f"{model_name}_"+prompt)
+                self.save_img(generated_image, f"{model_name}_"+prompt)
             except Exception as error:
-                self.logger.info(f"ERROR WITH GENERATING IMAGE VIA {model_name}: ",+error)
+                self.logger.info(f"ERROR WITH GENERATING IMAGE VIA {model_name}: "+str(error))
                 print(f"ERROR WITH GENERATING IMAGE VIA {model_name}: ", error)
 
     def inpaint_image(self, iter_number, guidance_scale):
         image, mask, w_orig, h_orig = self.prepare_input(self.original_img, self.masks)
 
-        self.generating_image(
+        self.sd_generating_image(
+            self.kandinsky,
             image, mask,
             iter_number, guidance_scale,
             w_orig, h_orig, 
-            model_name="SD2",
+            model_name="K3",
         )
 
         # self.logger.info(f"TURN DREAMBOOTH ON")
         # self.logger.info(f"Turn TEXTUAL INVERSION ON")
         # self.stable_diffusion.load_textual_inversion()
 
-        # self.generating_image(
+        # self.sd_generating_image(
         #     image, mask,
         #     iter_number, guidance_scale,
         #     w_orig, h_orig, 
         #     model_name="SD2_tuned",
         # )
-
-            # try:
-            #     self.logger.info("Generate KAND with prompt: "+prompt)
-            #     start_time = time.time()
-            #     self.kandinsky_image = self.kandinsky.diffusion_inpaint(
-            #         image, mask, prompt, None, w_orig, h_orig, 
-            #         iter_number, guidance_scale,
-            #     )
-            #     curr_time = time.time()
-            #     self.kandinsky_avg_time += curr_time-start_time
-            #     self.logger.info("KANDINSKY generated time: "+str(curr_time-start_time))
-            #     self.save_img(self.kandinsky_image, "KAND_"+prompt)
-            # except Exception as error:
-            #     self.logger.info("ERROR WITH GENERATING IMAGE VIA KANDINSKY: "+error)
-            #     print("ERROR WITH GENERATING IMAGE VIA KANDINSKY: ", error)
 
         self.logger.info("DONE GENERATING IMAGES")
         self.logger.info("AVERAGE TIME FOR MODELS:")
