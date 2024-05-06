@@ -1,8 +1,9 @@
-diff_depth/
-diff/
-
 __pycache__
 .DS_Store
+.vscode
+
+diff_depth/
+diff/
 images/output_imgs/exp3
 images/output_imgs/exp4
 images/left_label
