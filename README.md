@@ -8,7 +8,7 @@ pip install -r requirements.txt
 ```
 
 ## Training
-Also this instrument support training diffusion odels on custom datasets via **Textual inversion** and **DreamBooth** using about ~3-5 images of targeted object
+Also this instrument support training diffusion odels on custom datasets via **Textual inversion** and **DreamBooth-inpainting** using about ~3-5 images of targeted object
 
 ### Textual inversion
 To run trainig use folowing sommand:
@@ -31,7 +31,7 @@ accelerate launch scripts/textual_inversion.py \
 --mixed_precision="bfp16" \
 ```
 
-### DreamBooth
+### DreamBooth-inpainting
 To run trainig use folowing sommand:
 ```
 accelerate launch scripts/train_dreambooth_inpaint.py \

@@ -6,7 +6,7 @@ import gradio as gr
 # from .stable_diffusion import StableDiffusionModel
 from .sd_inpaint_dreambooth import StableDiffusionModel
 # from .kandinsky import KandinskyModel
-from .kandinsky_3 import Kandinsky3Model
+# from .kandinsky_3 import Kandinsky3Model
 import logging
 import time 
 
@@ -50,10 +50,11 @@ class GradioWindow():
             self.logger.info("Use prompts from "+self.path_to_prompts)
 
     def load_models(self):
-        # self.stable_diffusion = StableDiffusionModel()
+        self.stable_diffusion = StableDiffusionModel()
         # self.kandinsky = KandinskyModel()
-        self.kandinsky = Kandinsky3Model()
+        # self.kandinsky = Kandinsky3Model()
         self.logger.info("Models loaded")
+        print("Models loaded")
 
     def main(self):
         with gr.Blocks() as self.demo:
@@ -136,7 +137,6 @@ class GradioWindow():
         self.check_folders()
         self.start_logging()
         self.read_prompts()
-        # self.load_models()
 
         print("START DONE")
 
@@ -185,7 +185,7 @@ class GradioWindow():
         image, mask, w_orig, h_orig = self.prepare_input(self.original_img, self.masks)
 
         self.sd_generating_image(
-            self.kandinsky,
+            self.stable_diffusion,
             image, mask,
             iter_number, guidance_scale,
             w_orig, h_orig, 
