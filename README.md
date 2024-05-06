@@ -1,5 +1,5 @@
 # GUI FOR DIFFUSION MODELS
-Support Stable Diffusion v2, Stable Diffusion XL, Kandinsky 2.2
+Support Stable Diffusion v1.5 and v2, Stable Diffusion XL, Kandinsky 2.2 and 3
 
 ## Installation
 python verison is 3.12
