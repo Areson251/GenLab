@@ -22,6 +22,7 @@ import shutil
 import warnings
 import json
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 import numpy as np
 import PIL
@@ -125,35 +126,43 @@ These are textual inversion adaption weights for {base_model}. You can find some
     model_card.save(os.path.join(repo_folder, "README.md"))
 
 
-# TODO: rewrite validation for inpainting
-def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight_dtype, epoch):
+def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight_dtype, epoch, image, mask):
     logger.info(
-        f"Running validation... \n Generating {args.num_validation_images} images with prompt:"
+        f"Running validation... \n Generating {args.num_validation_images} images with images and masks from batch and prompt:"
         f" {args.validation_prompt}."
     )
-    # create pipeline (note: unet and vae are loaded again in float32)
-    pipeline = DiffusionPipeline.from_pretrained(
+    pipeline = StableDiffusionInpaintPipeline.from_pretrained(
         args.pretrained_model_name_or_path,
+        vae=vae,
         text_encoder=accelerator.unwrap_model(text_encoder),
         tokenizer=tokenizer,
         unet=unet,
-        vae=vae,
         safety_checker=None,
         revision=args.revision,
         variant=args.variant,
         torch_dtype=weight_dtype,
     )
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
-    pipeline = pipeline.to(accelerator.device)
+    pipeline = pipeline.to("cpu")
+    # pipeline = pipeline.to(accelerator.device)
     pipeline.set_progress_bar_config(disable=True)
 
     # run inference
     generator = None if args.seed is None else torch.Generator(device=accelerator.device).manual_seed(args.seed)
     images = []
     for _ in range(args.num_validation_images):
-        with torch.autocast("cuda"):
-            image = pipeline(args.validation_prompt, num_inference_steps=25, generator=generator).images[0]
-        images.append(image)
+        with torch.autocast("cpu"):
+        # with torch.autocast(accelerator.device):
+            inpaint_image = pipeline(
+            num_inference_steps=30,
+            prompt=args.validation_prompt,
+            image=image,
+            mask_image=mask,
+            # guidance_scale=guidance_scale,
+            # strength=1.0
+            generator=generator,
+        ).images
+        images.append(inpaint_image)
 
     for tracker in accelerator.trackers:
         if tracker.name == "tensorboard":
@@ -194,10 +203,12 @@ def prepare_mask_and_masked_image(image, mask):
     image = torch.from_numpy(image).to(dtype=torch.float32) / 127.5 - 1.0
 
     mask = np.array(mask.convert("L"))
-    mask = mask.astype(np.float32) / 255.0
+    mask = mask.astype(np.float32) 
+    # mask = mask.astype(np.float32) / 255.0
+    # mask = mask[None]
     mask = mask[None, None]
-    mask[mask < 0.5] = 0
-    mask[mask >= 0.5] = 1
+    # mask[mask < 0.5] = 0
+    # mask[mask >= 0.5] = 1
     mask = torch.from_numpy(mask)
 
     masked_image = image * (mask < 0.5)
@@ -590,17 +601,65 @@ class TextualInversionDataset(Dataset):
         self.templates = imagenet_style_templates_small if learnable_property == "style" else imagenet_templates_small
         self.flip_transform = transforms.RandomHorizontalFlip(p=self.flip_p)
 
+        self.image_transforms_resize = transforms.Compose(
+            [
+                transforms.Resize(size, interpolation=transforms.InterpolationMode.BILINEAR),
+            ]
+        )
+
+        self.image_transforms_resize_and_crop = transforms.Compose(
+            [
+                transforms.Resize(size, interpolation=transforms.InterpolationMode.BILINEAR),
+                transforms.CenterCrop(size) if center_crop else transforms.RandomCrop(size),
+            ]
+        )
+
+        self.image_transforms = transforms.Compose(
+            [
+                transforms.ToTensor(),
+                transforms.Normalize([0.5], [0.5]),
+            ]
+        )
+
     def __len__(self):
         return self._length
 
     def __getitem__(self, i):
         example = {}
         image_path = self.image_paths[i % self.num_images]
-        print("image_path", image_path)
+        image_name = image_path.split("/")[-1]
+        imgs = annotations_data.dataset["images"]
+
+        img_id = [d["id"] for d in imgs if d["file_name"]==image_name][0]
+        image_data = annotations_data.loadImgs(ids=[img_id])[0]
+        example["image_data"] = image_data
+
         image = Image.open(image_path)
 
         if not image.mode == "RGB":
             image = image.convert("RGB")
+
+        image = self.image_transforms_resize(image)
+        # image = self.image_transforms_resize_and_crop(image)
+        example["PIL_images"] = image
+        example["instance_images"] = self.image_transforms(image)
+        # example["instance_images"] = image
+
+        if annotations_data:
+            # load data for current image
+            anns_ids = annotations_data.getAnnIds(imgIds=[image_data["id"]])
+            masks = annotations_data.loadAnns(ids=anns_ids)
+
+            # if image has a few instances -> choose random mask
+            mask_rle = random.choice(masks)
+            mask = annotations_data.annToMask(mask_rle)
+            mask = Image.fromarray(np.uint8(mask)).convert('RGB')
+
+            mask = self.image_transforms_resize(mask)
+            # mask = self.image_transforms_resize_and_crop(mask)
+            example["PIL_masks"] = mask
+            example["instance_masks"] = self.image_transforms(mask)
+            example["instance_masks"] = mask
 
         placeholder_string = self.placeholder_token
         text = random.choice(self.templates).format(placeholder_string)
@@ -613,28 +672,6 @@ class TextualInversionDataset(Dataset):
             return_tensors="pt",
         ).input_ids[0]
 
-        # default to score-sde preprocessing
-        img = np.array(image).astype(np.uint8)
-
-        if self.center_crop:
-            crop = min(img.shape[0], img.shape[1])
-            (
-                h,
-                w,
-            ) = (
-                img.shape[0],
-                img.shape[1],
-            )
-            img = img[(h - crop) // 2 : (h + crop) // 2, (w - crop) // 2 : (w + crop) // 2]
-
-        image = Image.fromarray(img)
-        image = image.resize((self.size, self.size), resample=self.interpolation)
-
-        image = self.flip_transform(image)
-        image = np.array(image).astype(np.uint8)
-        image = (image / 127.5 - 1.0).astype(np.float32)
-
-        example["pixel_values"] = torch.from_numpy(image).permute(2, 0, 1)
         return example
 
 
@@ -801,41 +838,33 @@ def main():
         set="train",
     )
     
+    global annotations_data 
     annotations_data = None
     if args.annotation_path:
         annotations_data = COCO(args.annotation_path)
 
     def collate_fn(examples):
         input_ids = [example["input_ids"] for example in examples]
-        pixel_values = [example["pixel_values"] for example in examples]
+        pixel_values = [example["instance_images"] for example in examples]
 
-        print("input_ids is ", input_ids)
+        masks = []
+        masked_images = []
+        for example in examples:
+            pil_image = example["PIL_images"]
+                
+            if args.annotation_path:
+                # load data for current image
+                mask = example["instance_masks"]
 
-        if args.annotation_path:
-            masks = annotations_data.dataset.getAnnIds(imgIds=[img_id], iscrowd=None)
-        
-        else:
-            masks = []
-            masked_images = []
-            for example in examples:
-                pil_image = example["PIL_images"]
+            else:
                 # generate a random mask
                 mask = random_mask(pil_image.size, 1, False)
-                # prepare mask and masked image
-                mask, masked_image = prepare_mask_and_masked_image(pil_image, mask)
 
-                masks.append(mask)
-                masked_images.append(masked_image)
+            # prepare mask and masked image
+            mask, masked_image = prepare_mask_and_masked_image(pil_image, mask)
 
-            if args.with_prior_preservation:
-                for pil_image in pior_pil:
-                    # generate a random mask
-                    mask = random_mask(pil_image.size, 1, False)
-                    # prepare mask and masked image
-                    mask, masked_image = prepare_mask_and_masked_image(pil_image, mask)
-
-                    masks.append(mask)
-                    masked_images.append(masked_image)
+            masks.append(mask)
+            masked_images.append(masked_image)
 
         pixel_values = torch.stack(pixel_values)
         pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
@@ -964,6 +993,27 @@ def main():
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample().detach()
                 latents = latents * vae.config.scaling_factor
 
+                # Convert masked images to latent space
+                masked_latents = vae.encode(
+                    batch["masked_images"].reshape(batch["pixel_values"].shape).to(dtype=weight_dtype)
+                ).latent_dist.sample()
+                masked_latents = masked_latents * vae.config.scaling_factor
+
+                w = masked_latents.shape[2]
+                h = masked_latents.shape[3]
+
+                masks = batch["masks"]
+                # resize the mask to latents shape as we concatenate the mask to the latents
+                mask = torch.stack(
+                    [
+                        torch.nn.functional.interpolate(mask, size=(w, h))
+                        # torch.nn.functional.interpolate(mask, size=(args.resolution // 8, args.resolution // 8))
+                        for mask in masks
+                    ]
+                )
+                mask = mask.reshape(-1, 1, w, h)
+                # mask = mask.reshape(-1, 1, args.resolution // 8, args.resolution // 8)
+
                 # Sample noise that we'll add to the latents
                 noise = torch.randn_like(latents)
                 bsz = latents.shape[0]
@@ -975,11 +1025,15 @@ def main():
                 # (this is the forward diffusion process)
                 noisy_latents = noise_scheduler.add_noise(latents, noise, timesteps)
 
+                # concatenate the noised latents with the mask and the masked latents
+                latent_model_input = torch.cat([noisy_latents, mask, masked_latents], dim=1)
+
                 # Get the text embedding for conditioning
                 encoder_hidden_states = text_encoder(batch["input_ids"])[0].to(dtype=weight_dtype)
 
                 # Predict the noise residual
-                model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
+                # model_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
+                model_pred = unet(latent_model_input, timesteps, encoder_hidden_states).sample
 
                 # Get the target for loss depending on the prediction type
                 if noise_scheduler.config.prediction_type == "epsilon":
@@ -1054,11 +1108,24 @@ def main():
                         logger.info(f"Saved state to {save_path}")
 
                     if args.validation_prompt is not None and global_step % args.validation_steps == 0:
+                        #TODO: rewrite val using val dataset
+                        image = batch["pixel_values"].to(dtype=weight_dtype).to("cpu").numpy()[0]
+                        image = image.transpose(1, 2, 0)
+                        mask = batch["masks"].to(dtype=weight_dtype).to("cpu").numpy()[0][0][0]
+                        
+                        # plt.figure()
+                        # f, axarr = plt.subplots(2,1) 
+                        # axarr[0].imshow(image)
+                        # axarr[1].imshow(mask)
+                        # plt.show()
+
                         images = log_validation(
-                            text_encoder, tokenizer, unet, vae, args, accelerator, weight_dtype, epoch
+                            text_encoder, tokenizer, unet, vae, args, accelerator, weight_dtype, epoch,
+                            image, mask
                         )
 
-            logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
+            logs = {"loss": loss.detach().item()}
+            # logs = {"loss": loss.detach().item(), "lr": lr_scheduler.get_last_lr()[0]}
             progress_bar.set_postfix(**logs)
             accelerator.log(logs, step=global_step)
 
