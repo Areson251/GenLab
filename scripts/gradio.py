@@ -3,8 +3,8 @@ import numpy as np
 import torch
 from PIL import Image
 import gradio as gr
-# from .stable_diffusion import StableDiffusionModel
-from .sd_inpaint_dreambooth import StableDiffusionModel
+from .stable_diffusion import StableDiffusionModel
+# from .sd_inpaint_dreambooth import StableDiffusionModel
 # from .kandinsky import KandinskyModel
 # from .kandinsky_3 import Kandinsky3Model
 import logging
@@ -17,6 +17,7 @@ class GradioWindow():
         self.path_to_prompts = None
         self.path_to_negative_prompts = None
         self.path_to_logs = None
+        self.path_to_ti = None
 
         self.original_img = None
         self.masks = None
@@ -54,7 +55,7 @@ class GradioWindow():
         # self.kandinsky = KandinskyModel()
         # self.kandinsky = Kandinsky3Model()
         self.logger.info("Models loaded")
-        print("Models loaded")
+        print("Models loaded!")
 
     def main(self):
         with gr.Blocks() as self.demo:
@@ -69,6 +70,7 @@ class GradioWindow():
                     self.prompts = gr.Textbox(label="Prompt path", value="prompts/pothole.txt")
                     self.negative_prompts = gr.Textbox(label="Negative prompt path", value="images/negative_prompts.txt")
                     self.logs = gr.Textbox(label="Logs file name", value="out.log")
+                    self.ti = gr.Textbox(label="Textual inversion path", value="model_output/SD2inp_ti_cat-avocado/checkpoint-6000")
                     self.setup_settings = gr.Button("Set up")
 
             with gr.Row():
@@ -99,6 +101,7 @@ class GradioWindow():
                     self.prompts,
                     self.negative_prompts,
                     self.logs,
+                    self.ti,
                 ],
             )
 
@@ -110,9 +113,6 @@ class GradioWindow():
 
             self.button_load_models.click(
                 self.load_models,
-                # inputs=[self.positive_prompt, self.negative_prompt],
-                # inputs=[self.iter_number, self.guidance_scale],
-                # outputs=[self.kandinsky_image, self.stable_diffusion_image],
             )
 
             # TODO: rewrite to cycle for each model
@@ -124,13 +124,16 @@ class GradioWindow():
             )
 
      # Define the logic
-    def setup(self, path_to_orig_imgs, path_to_output_imgs, path_to_prompts, path_to_negative_prompts, path_to_logs):
+    def setup(self, path_to_orig_imgs, path_to_output_imgs, 
+              path_to_prompts, path_to_negative_prompts, 
+              path_to_logs, path_to_ti):
         print("START SETUP")
         self.path_to_orig_imgs = path_to_orig_imgs
         self.path_to_output_imgs = path_to_output_imgs
         self.path_to_prompts = path_to_prompts
         self.path_to_negative_prompts = path_to_negative_prompts
         self.path_to_logs = path_to_logs
+        self.path_to_ti = path_to_ti
 
         self.folders = [self.path_to_orig_imgs, self.path_to_output_imgs]
 
@@ -189,19 +192,23 @@ class GradioWindow():
             image, mask,
             iter_number, guidance_scale,
             w_orig, h_orig, 
-            model_name="K3",
+            model_name="SD2",
         )
 
         # self.logger.info(f"TURN DREAMBOOTH ON")
-        # self.logger.info(f"Turn TEXTUAL INVERSION ON")
-        # self.stable_diffusion.load_textual_inversion()
+        self.logger.info(f"Turn TEXTUAL INVERSION ON")
+        self.stable_diffusion.load_textual_inversion(self.path_to_ti)
 
-        # self.sd_generating_image(
-        #     image, mask,
-        #     iter_number, guidance_scale,
-        #     w_orig, h_orig, 
-        #     model_name="SD2_tuned",
-        # )
+        self.sd_generating_image(
+            self.stable_diffusion,
+            image, mask,
+            iter_number, guidance_scale,
+            w_orig, h_orig,  
+            model_name="SD2_ti-inp",
+        )
+
+        self.logger.info(f"Turn TEXTUAL INVERSION OFF")
+        self.stable_diffusion.unload_textual_inversion()
 
         self.logger.info("DONE GENERATING IMAGES")
         self.logger.info("AVERAGE TIME FOR MODELS:")

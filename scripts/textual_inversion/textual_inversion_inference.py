@@ -1,20 +1,16 @@
-from diffusers import StableDiffusionPipeline, DDIMScheduler
+from diffusers import StableDiffusionPipeline, DDIMScheduler, StableDiffusionInpaintPipeline
 import torch
 import safetensors
 import os
 
-MODEL_CHECKPOINT = "model_output/exp3_cat-avocado/checkpoint-6000"
-IMAGE_PATH = "images/test_avocado2/"
-IMAGE_NAME = "cat-avocado"
+MODEL_CHECKPOINT = "model_output/ti_pothole-inpainting/checkpoint-6000"
+IMAGE_PATH = "images/test_pothole-ti/"
+IMAGE_NAME = "pothole-ti"
 PROMPTS = [
-    "A <cat-avocado>",
-    "A a road with <cat-avocado> leading off into the distance and surrounded by a clearing",
-    "<cat-avocado> on paper",
-    "<cat-avocado> on the crossroad",
-    "<cat-avocado> in pink room",
+    "<pothole>"
     ]
 
-pipeline = StableDiffusionPipeline.from_pretrained("stabilityai/stable-diffusion-2", torch_dtype=torch.float16).to("cuda")
+pipeline = StableDiffusionInpaintPipeline.from_pretrained("stabilityai/stable-diffusion-2-inpainting", torch_dtype=torch.float16).to("cuda")
 pipeline.scheduler = DDIMScheduler.from_config(pipeline.scheduler.config)
 
 if not os.path.exists(IMAGE_PATH):

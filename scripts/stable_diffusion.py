@@ -6,13 +6,12 @@ from diffusers import DDIMScheduler, StableDiffusionInpaintPipeline, StableDiffu
 
 class StableDiffusionModel():
     def __init__(self, 
-                 pretrained="stabilityai/stable-diffusion-2-inpainting", 
-                 textual_inversion_checkpoint="model_output/exp1/checkpoint-1000") -> None:
+                 pretrained="stabilityai/stable-diffusion-2-inpainting") -> None:
         
         self.pretrained = pretrained
-        self.textual_inversion_checkpoint = textual_inversion_checkpoint
+        self.textual_inversion_checkpoint = None
 
-        self.device = torch.device("mps")
+        self.device = torch.device("cuda")
         print("DEVICE FOR SD: ", self.device)
 
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(
@@ -28,8 +27,13 @@ class StableDiffusionModel():
         ).to(self.device)
         self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
 
-    def load_textual_inversion(self):
+    def load_textual_inversion(self, textual_inversion_checkpoint):
+        self.textual_inversion_checkpoint = textual_inversion_checkpoint
         self.pipe.load_textual_inversion(self.textual_inversion_checkpoint)
+
+    def unload_textual_inversion(self):
+        self.textual_inversion_checkpoint = None
+        self.pipe.unload_textual_inversion()
 
     def diffusion_inpaint(self, image, mask, 
                           positive_prompt, negative_prompt, 

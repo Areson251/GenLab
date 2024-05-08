@@ -53,6 +53,8 @@ from diffusers import (
     DPMSolverMultistepScheduler,
     StableDiffusionPipeline,
     StableDiffusionInpaintPipeline,
+    StableDiffusionXLInpaintPipeline,
+    AutoPipelineForInpainting,
     UNet2DConditionModel,
 )
 from diffusers.optimization import get_scheduler
@@ -131,6 +133,8 @@ def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight
         f"Running validation... \n Generating {args.num_validation_images} images with images and masks from batch and prompt:"
         f" {args.validation_prompt}."
     )
+    # pipeline = StableDiffusionXLInpaintPipeline.from_pretrained(
+    # pipeline = AutoPipelineForInpainting.from_pretrained(
     pipeline = StableDiffusionInpaintPipeline.from_pretrained(
         args.pretrained_model_name_or_path,
         vae=vae,
@@ -143,7 +147,7 @@ def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight
         torch_dtype=weight_dtype,
     )
     pipeline.scheduler = DPMSolverMultistepScheduler.from_config(pipeline.scheduler.config)
-    pipeline = pipeline.to("cpu")
+    pipeline = pipeline.to("cuda")
     # pipeline = pipeline.to(accelerator.device)
     pipeline.set_progress_bar_config(disable=True)
 
@@ -151,7 +155,7 @@ def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight
     generator = None if args.seed is None else torch.Generator(device=accelerator.device).manual_seed(args.seed)
     images = []
     for _ in range(args.num_validation_images):
-        with torch.autocast("cpu"):
+        with torch.autocast("cuda"):
         # with torch.autocast(accelerator.device):
             inpaint_image = pipeline(
             num_inference_steps=30,
@@ -161,7 +165,7 @@ def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight
             # guidance_scale=guidance_scale,
             # strength=1.0
             generator=generator,
-        ).images
+        ).images[0]
         images.append(inpaint_image)
 
     for tracker in accelerator.trackers:
@@ -172,7 +176,7 @@ def log_validation(text_encoder, tokenizer, unet, vae, args, accelerator, weight
             tracker.log(
                 {
                     "validation": [
-                        wandb.Image(image, caption=f"{i}: {args.validation_prompt}") for i, image in enumerate(images)
+                        wandb.Image(image, caption=f"e_{epoch}i_{i}: {args.validation_prompt}") for i, image in enumerate(images)
                     ]
                 }
             )
@@ -1108,7 +1112,8 @@ def main():
                         logger.info(f"Saved state to {save_path}")
 
                     if args.validation_prompt is not None and global_step % args.validation_steps == 0:
-                        #TODO: rewrite val using val dataset
+                        #TODO: rewrite val using val dataset 
+                        #TODO: and don`t use cpu
                         image = batch["pixel_values"].to(dtype=weight_dtype).to("cpu").numpy()[0]
                         image = image.transpose(1, 2, 0)
                         mask = batch["masks"].to(dtype=weight_dtype).to("cpu").numpy()[0][0][0]
