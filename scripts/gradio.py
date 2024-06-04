@@ -3,10 +3,10 @@ import numpy as np
 import torch
 from PIL import Image
 import gradio as gr
-from .stable_diffusion import StableDiffusionModel
+# from .stable_diffusion import StableDiffusionModel
 # from .sd_inpaint_dreambooth import StableDiffusionModel
 # from .kandinsky import KandinskyModel
-# from .kandinsky_3 import Kandinsky3Model
+from .kandinsky_3 import Kandinsky3Model
 import logging
 import time 
 
@@ -51,9 +51,9 @@ class GradioWindow():
             self.logger.info("Use prompts from "+self.path_to_prompts)
 
     def load_models(self):
-        self.stable_diffusion = StableDiffusionModel()
+        # self.stable_diffusion = StableDiffusionModel()
         # self.kandinsky = KandinskyModel()
-        # self.kandinsky = Kandinsky3Model()
+        self.kandinsky = Kandinsky3Model()
         self.logger.info("Models loaded")
         print("Models loaded!")
 
@@ -151,6 +151,23 @@ class GradioWindow():
         self.logger.info("New mask has been drawn")
         return [self.original_img, self.masks, input_img["composite"]]
     
+    def get_bbox(self, mask):
+        mask = np.array(mask)
+        non_zero_coords = np.argwhere(mask == 255)
+
+        y1, x1 = non_zero_coords.min(axis=0)
+        y2, x2 = non_zero_coords.max(axis=0)
+
+        padding = 20
+        x1_padded = max(x1 - padding, 0)
+        y1_padded = max(y1 - padding, 0)
+        x2_padded = min(x2 + padding, mask.shape[1] - 1)
+        y2_padded = min(y2 + padding, mask.shape[0] - 1)
+
+        bounding_box_with_padding = [x1_padded, y1_padded, x2_padded, y2_padded]
+        print("bounding_box_with_padding", bounding_box_with_padding)
+        return bounding_box_with_padding
+
     def prepare_input(self, image, mask):
         self.logger.info("Image shape: "+str(np.array(image).shape))
         self.logger.info("Mask shape: "+str(np.array(mask).shape))
@@ -160,13 +177,24 @@ class GradioWindow():
         w_orig, h_orig = image.size
         image = image.resize((512, 512))
         mask = Image.fromarray(np.uint8(mask)).resize((512, 512), Image.NEAREST)
+        print("MASK type: ", type(mask))
 
         print(np.array(image).shape, np.array(mask).shape)
+        bbox = self.get_bbox(mask)
+        left, upper, right, lower = bbox
+        # Crop the image and mask
+        cropped_image = image.crop((left, upper, right, lower))
+        cropped_mask = mask.crop((left, upper, right, lower))
+
         self.logger.info("New image shape: "+str(np.array(image).shape))
         self.logger.info("New mask shape: "+str(np.array(mask).shape))
-        return image, mask, w_orig, h_orig
+        return image, mask, w_orig, h_orig, cropped_image, cropped_mask, bbox
     
-    def sd_generating_image(self, diffusion_model, image, mask, iter_number, guidance_scale, w_orig, h_orig, model_name=""):
+    def generating_image(self, diffusion_model, image, mask, 
+                            cropped_image, cropped_mask,
+                            iter_number, guidance_scale, 
+                            w_orig, h_orig, bbox, model_name=""):
+        
         for prompt in self.prompts:
             try:
                 self.logger.info(f"Generate {model_name} with prompt: "+prompt)
@@ -174,41 +202,63 @@ class GradioWindow():
                 start_time = time.time()
                 generated_image = diffusion_model.diffusion_inpaint(
                     image, mask, prompt, None, w_orig, h_orig, 
+                    # cropped_image, cropped_mask, prompt, None, w_orig, h_orig, 
                     iter_number, guidance_scale,
                 )
+                inpaint_image = generated_image
+                # generated_image.save("1.jpg")
+
+                # Calculate the size of the bounding box
+                # left, upper, right, lower = bbox
+                # bounding_box_width = right - left + 1
+                # bounding_box_height = lower - upper + 1
+                # replace_img_resized = generated_image.resize((bounding_box_width, bounding_box_height))
+                # image.save("2.jpg")
+
+                # image.paste(replace_img_resized, (bbox[0], bbox[1]))
+                # inpaint_image = image.paste(generated_image, (bbox[0], bbox[1]))
+                # image.save("3.jpg")
+                # inpaint_image.save("2.jpg")
+                # inpaint_image = generated_image.resize((w_orig, h_orig))
+                # inpaint_image = inpaint_image.resize((w_orig, h_orig))
+                # inpaint_image.save("4.jpg")
+                # inpaint_image = np.array(inpaint_image)
+
                 curr_time = time.time()
                 self.sd_avg_time += curr_time-start_time
                 self.logger.info(f"{model_name} generated time: "+str(curr_time-start_time))
-                self.save_img(generated_image, f"{model_name}_"+prompt)
+                self.save_img(inpaint_image, f"{model_name}_"+prompt)
             except Exception as error:
                 self.logger.info(f"ERROR WITH GENERATING IMAGE VIA {model_name}: "+str(error))
                 print(f"ERROR WITH GENERATING IMAGE VIA {model_name}: ", error)
 
     def inpaint_image(self, iter_number, guidance_scale):
-        image, mask, w_orig, h_orig = self.prepare_input(self.original_img, self.masks)
+        image, mask, w_orig, h_orig, cropped_image, cropped_mask, bbox = self.prepare_input(self.original_img, self.masks)
 
-        self.sd_generating_image(
-            self.stable_diffusion,
+        self.generating_image(
+            # self.stable_diffusion,
+            self.kandinsky,
             image, mask,
+            cropped_image, cropped_mask,
             iter_number, guidance_scale,
-            w_orig, h_orig, 
+            w_orig, h_orig, bbox,
             model_name="SD2",
         )
 
-        # self.logger.info(f"TURN DREAMBOOTH ON")
-        self.logger.info(f"Turn TEXTUAL INVERSION ON")
-        self.stable_diffusion.load_textual_inversion(self.path_to_ti)
+        # # self.logger.info(f"TURN DREAMBOOTH ON")
+        # self.logger.info(f"Turn TEXTUAL INVERSION ON")
+        # self.stable_diffusion.load_textual_inversion(self.path_to_ti)
 
-        self.sd_generating_image(
-            self.stable_diffusion,
-            image, mask,
-            iter_number, guidance_scale,
-            w_orig, h_orig,  
-            model_name="SD2_ti-inp",
-        )
+        # self.sd_generating_image(
+        #     self.stable_diffusion,
+        #     image, mask,
+        #     iter_number, guidance_scale,
+        #     w_orig, h_orig,  
+        #     model_name="SD2_ti-inp",
+        # )
 
-        self.logger.info(f"Turn TEXTUAL INVERSION OFF")
-        self.stable_diffusion.unload_textual_inversion()
+        # self.logger.info(f"Turn TEXTUAL INVERSION OFF")
+        # self.stable_diffusion.unload_textual_inversion()
 
         self.logger.info("DONE GENERATING IMAGES")
         self.logger.info("AVERAGE TIME FOR MODELS:")

@@ -16,20 +16,20 @@ class StableDiffusionModel():
         self.device = torch.device("cuda")
         print("DEVICE FOR SD: ", self.device)
 
-        unet = UNet2DConditionModel.from_pretrained("model_output/exp2_cat-avocado/unet")
+        unet = UNet2DConditionModel.from_pretrained("model_output/db_pothole/unet")
         # unet = UNet2DConditionModel.from_pretrained("model_output/db_inp_exp2/unet")
 
         # if you have trained with `--args.train_text_encoder` make sure to also load the text encoder
-        text_encoder = CLIPTextModel.from_pretrained("model_output/exp2_cat-avocado/text_encoder")
+        text_encoder = CLIPTextModel.from_pretrained("model_output/db_pothole/text_encoder")
         # text_encoder = CLIPTextModel.from_pretrained("model_output/db_inp_exp2/text_encoder")
 
         # pipeline = DiffusionPipeline.from_pretrained(
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(
-            "model_output/exp2_cat-avocado/checkpoint-6000", unet=unet, text_encoder=text_encoder, dtype=torch.float16,
-            # "model_output/db_inp_exp2/checkpoint-6000", unet=unet, text_encoder=text_encoder, dtype=torch.float16,
+            "model_output/db_pothole/checkpoint-1000", unet=unet, text_encoder=text_encoder
+            # "model_output/db_inp_exp2/checkpoint-1000", unet=unet, text_encoder=text_encoder, dtype=torch.float16,
             # "stabilityai/stable-diffusion-2-inpainting", unet=unet, text_encoder=text_encoder, dtype=torch.float16,
         ).to("cuda")
-        self.pipe.scheduler = DDIMScheduler.from_config("model_output/exp2_cat-avocado/scheduler")
+        self.pipe.scheduler = DDIMScheduler.from_config("model_output/db_pothole/checkpoint-1000")
         # self.pipe.scheduler = DDIMScheduler.from_config("model_output/db_inp_exp2/scheduler")
 
     def load_textual_inversion(self):
@@ -53,8 +53,9 @@ class StableDiffusionModel():
         print("GENERATED IMAGE COUNT: ", len(inpaint_images))
         inpaint_image = inpaint_images[0]
 
-        inpaint_image = inpaint_image.resize((w_orig, h_orig))
-        return np.array(inpaint_image)
+        # inpaint_image = inpaint_image.resize((w_orig, h_orig))
+        return inpaint_image
+        # return np.array(inpaint_image)
     
 
 # stable_diffusion = StableDiffusionModel()

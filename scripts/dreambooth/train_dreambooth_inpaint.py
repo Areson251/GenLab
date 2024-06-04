@@ -19,6 +19,7 @@ from torch.utils.data import Dataset
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
+from pycocotools.coco import COCO
 
 from diffusers import (
     AutoencoderKL,
@@ -35,7 +36,7 @@ if is_wandb_available():
 
 from huggingface_hub import login
 
-login()
+login(token="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")
 
 
 # Will error if the minimal version of diffusers is not installed. Remove at your own risks.
@@ -170,10 +171,10 @@ def parse_args():
     )
     parser.add_argument("--train_text_encoder", action="store_true", help="Whether to train the text encoder")
     parser.add_argument(
-        "--train_batch_size", type=int, default=4, help="Batch size (per device) for the training dataloader."
+        "--train_batch_size", type=int, default=1, help="Batch size (per device) for the training dataloader."
     )
     parser.add_argument(
-        "--sample_batch_size", type=int, default=4, help="Batch size (per device) for sampling images."
+        "--sample_batch_size", type=int, default=1, help="Batch size (per device) for sampling images."
     )
     parser.add_argument("--num_train_epochs", type=int, default=1)
     parser.add_argument(
@@ -293,6 +294,9 @@ def parse_args():
             ' (default), `"wandb"` and `"comet_ml"`. Use `"all"` to report to all integrations.'
         ),
     )
+    parser.add_argument(
+        "--annotation_path", type=str, default=None, help="Path to COCO annotation if you want to train in custom masks"
+    )
 
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -369,13 +373,38 @@ class DreamBoothDataset(Dataset):
 
     def __getitem__(self, index):
         example = {}
-        instance_image = Image.open(self.instance_images_path[index % self.num_instance_images])
+
+        image_path = self.instance_images_path[index % self.num_instance_images]
+        image_name = str(image_path).split("/")[-1]
+        imgs = annotations_data.dataset["images"]
+
+        img_id = [d["id"] for d in imgs if d["file_name"]==image_name][0]
+        image_data = annotations_data.loadImgs(ids=[img_id])[0]
+        example["image_data"] = image_data
+
+        instance_image = Image.open(image_path)
         if not instance_image.mode == "RGB":
             instance_image = instance_image.convert("RGB")
         instance_image = self.image_transforms_resize_and_crop(instance_image)
 
         example["PIL_images"] = instance_image
         example["instance_images"] = self.image_transforms(instance_image)
+
+        if annotations_data:
+            # load data for current image
+            anns_ids = annotations_data.getAnnIds(imgIds=[image_data["id"]])
+            masks = annotations_data.loadAnns(ids=anns_ids)
+
+            # if image has a few instances -> choose random mask
+            mask_rle = random.choice(masks)
+            mask = annotations_data.annToMask(mask_rle)
+            mask = Image.fromarray(np.uint8(mask)).convert('RGB')
+
+            # mask = self.image_transforms_resize(mask)
+            mask = self.image_transforms_resize_and_crop(mask)
+            example["PIL_masks"] = mask
+            example["instance_masks"] = self.image_transforms(mask)
+            example["instance_masks"] = mask
 
         example["instance_prompt_ids"] = self.tokenizer(
             self.instance_prompt,
@@ -571,6 +600,11 @@ def main():
         center_crop=args.center_crop,
     )
 
+    global annotations_data 
+    annotations_data = None
+    if args.annotation_path:
+        annotations_data = COCO(args.annotation_path)
+
     def collate_fn(examples):
         input_ids = [example["instance_prompt_ids"] for example in examples]
         pixel_values = [example["instance_images"] for example in examples]
@@ -586,8 +620,14 @@ def main():
         masked_images = []
         for example in examples:
             pil_image = example["PIL_images"]
-            # generate a random mask
-            mask = random_mask(pil_image.size, 1, False)
+            if args.annotation_path:
+                # load data for current image
+                mask = example["instance_masks"]
+
+            else:
+                # generate a random mask
+                mask = random_mask(pil_image.size, 1, False)
+
             # prepare mask and masked image
             mask, masked_image = prepare_mask_and_masked_image(pil_image, mask)
 
@@ -596,8 +636,14 @@ def main():
 
         if args.with_prior_preservation:
             for pil_image in pior_pil:
-                # generate a random mask
-                mask = random_mask(pil_image.size, 1, False)
+                if args.annotation_path:
+                    # load data for current image
+                    mask = example["instance_masks"]
+
+                else:
+                    # generate a random mask
+                    mask = random_mask(pil_image.size, 1, False)
+
                 # prepare mask and masked image
                 mask, masked_image = prepare_mask_and_masked_image(pil_image, mask)
 

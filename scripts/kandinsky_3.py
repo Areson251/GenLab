@@ -1,6 +1,5 @@
 import torch
 import numpy as np
-from diffusers import AutoPipelineForInpainting, KandinskyInpaintPipeline, KandinskyPriorPipeline
 from scripts.kandinsky3 import get_inpainting_pipeline
 
 
@@ -23,17 +22,6 @@ class Kandinsky3Model():
                           positive_prompt, negative_prompt, 
                           w_orig, h_orig, 
                           iter_number, guidance_scale):
-
-        # inpaint_images = self.pipe(
-        #     num_inference_steps=iter_number,
-        #     prompt=positive_prompt, 
-        #     # negative_prompt=negative_prompt,
-        #     image=image, 
-        #     mask_image=mask, 
-        #     guidance_scale=guidance_scale,
-        #     ).images
-        
-        # print("GENERATED IMAGE COUNT: ", len(inpaint_images))
         
         inpaint_images = self.pipe(
             steps=iter_number,
