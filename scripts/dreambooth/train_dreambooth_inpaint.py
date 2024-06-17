@@ -863,7 +863,8 @@ def main():
 
     # Create the pipeline using using the trained modules and save it.
     if accelerator.is_main_process:
-        pipeline = StableDiffusionPipeline.from_pretrained(
+        pipeline = StableDiffusionInpaintPipeline.from_pretrained(
+        # pipeline = StableDiffusionPipeline.from_pretrained(
             args.pretrained_model_name_or_path,
             unet=accelerator.unwrap_model(unet),
             text_encoder=accelerator.unwrap_model(text_encoder),

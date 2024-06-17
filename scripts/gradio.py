@@ -4,9 +4,9 @@ import torch
 from PIL import Image
 import gradio as gr
 # from .stable_diffusion import StableDiffusionModel
-# from .sd_inpaint_dreambooth import StableDiffusionModel
+from .sd_inpaint_dreambooth import StableDiffusionModel
 # from .kandinsky import KandinskyModel
-from .kandinsky_3 import Kandinsky3Model
+# from .kandinsky_3 import Kandinsky3Model
 import logging
 import time 
 
@@ -18,6 +18,7 @@ class GradioWindow():
         self.path_to_negative_prompts = None
         self.path_to_logs = None
         self.path_to_ti = None
+        self.path_to_db = None
 
         self.original_img = None
         self.masks = None
@@ -51,9 +52,10 @@ class GradioWindow():
             self.logger.info("Use prompts from "+self.path_to_prompts)
 
     def load_models(self):
-        # self.stable_diffusion = StableDiffusionModel()
+        self.stable_diffusion = StableDiffusionModel(textual_inversion_checkpoint=self.path_to_ti, 
+                                                    dreambooth_checkpoint=self.path_to_db)
         # self.kandinsky = KandinskyModel()
-        self.kandinsky = Kandinsky3Model()
+        # self.kandinsky = Kandinsky3Model()
         self.logger.info("Models loaded")
         print("Models loaded!")
 
@@ -71,6 +73,7 @@ class GradioWindow():
                     self.negative_prompts = gr.Textbox(label="Negative prompt path", value="images/negative_prompts.txt")
                     self.logs = gr.Textbox(label="Logs file name", value="out.log")
                     self.ti = gr.Textbox(label="Textual inversion path", value="model_output/SD2inp_ti_cat-avocado/checkpoint-6000")
+                    self.db = gr.Textbox(label="DreamBooth path", value="model_output/db_pothole")
                     self.setup_settings = gr.Button("Set up")
 
             with gr.Row():
@@ -79,8 +82,6 @@ class GradioWindow():
                 self.im_out_3 = gr.Image(type="pil", label="composite")
 
             with gr.Row():
-                # self.positive_prompt = gr.Textbox(label="Positive prompt")
-                # self.negative_prompt = gr.Textbox(label="Negative prompt")
                  with gr.Column():
                     self.iter_number = gr.Number(value=20, label="Steps")
                     self.guidance_scale = gr.Number(value=0.7, label="Guidance Scale")
@@ -102,6 +103,7 @@ class GradioWindow():
                     self.negative_prompts,
                     self.logs,
                     self.ti,
+                    self.db,
                 ],
             )
 
@@ -118,7 +120,6 @@ class GradioWindow():
             # TODO: rewrite to cycle for each model
             self.button_enter_prompt.click(
                 self.inpaint_image,
-                # inputs=[self.positive_prompt, self.negative_prompt],
                 inputs=[self.iter_number, self.guidance_scale],
                 outputs=[self.kandinsky_image, self.stable_diffusion_image],
             )
@@ -126,7 +127,8 @@ class GradioWindow():
      # Define the logic
     def setup(self, path_to_orig_imgs, path_to_output_imgs, 
               path_to_prompts, path_to_negative_prompts, 
-              path_to_logs, path_to_ti):
+              path_to_logs, path_to_ti, path_to_db):
+        
         print("START SETUP")
         self.path_to_orig_imgs = path_to_orig_imgs
         self.path_to_output_imgs = path_to_output_imgs
@@ -134,6 +136,8 @@ class GradioWindow():
         self.path_to_negative_prompts = path_to_negative_prompts
         self.path_to_logs = path_to_logs
         self.path_to_ti = path_to_ti
+        self.path_to_db = path_to_db
+        
 
         self.folders = [self.path_to_orig_imgs, self.path_to_output_imgs]
 
@@ -198,33 +202,28 @@ class GradioWindow():
         for prompt in self.prompts:
             try:
                 self.logger.info(f"Generate {model_name} with prompt: "+prompt)
-                # TODO: write common AutoPipelineForInpainting for all models
                 start_time = time.time()
+
                 generated_image = diffusion_model.diffusion_inpaint(
-                    image, mask, prompt, None, w_orig, h_orig, 
-                    # cropped_image, cropped_mask, prompt, None, w_orig, h_orig, 
+                    # image, mask, prompt, None, w_orig, h_orig, 
+                    cropped_image, cropped_mask, prompt, None, w_orig, h_orig, 
                     iter_number, guidance_scale,
                 )
-                inpaint_image = generated_image
-                # generated_image.save("1.jpg")
+                curr_time = time.time()
+                # inpaint_image = generated_image
 
                 # Calculate the size of the bounding box
-                # left, upper, right, lower = bbox
-                # bounding_box_width = right - left + 1
-                # bounding_box_height = lower - upper + 1
-                # replace_img_resized = generated_image.resize((bounding_box_width, bounding_box_height))
-                # image.save("2.jpg")
+                left, upper, right, lower = bbox
+                bounding_box_width = right - left + 1
+                bounding_box_height = lower - upper + 1
+                replace_img_resized = generated_image.resize((bounding_box_width, bounding_box_height))
+                # replace_img_resized.save("2.jpg")
 
-                # image.paste(replace_img_resized, (bbox[0], bbox[1]))
-                # inpaint_image = image.paste(generated_image, (bbox[0], bbox[1]))
-                # image.save("3.jpg")
-                # inpaint_image.save("2.jpg")
-                # inpaint_image = generated_image.resize((w_orig, h_orig))
-                # inpaint_image = inpaint_image.resize((w_orig, h_orig))
-                # inpaint_image.save("4.jpg")
-                # inpaint_image = np.array(inpaint_image)
+                image.paste(replace_img_resized, (bbox[0], bbox[1]))
+                inpaint_image = image
+                inpaint_image = inpaint_image.resize((w_orig, h_orig))
+                inpaint_image = np.array(inpaint_image)
 
-                curr_time = time.time()
                 self.sd_avg_time += curr_time-start_time
                 self.logger.info(f"{model_name} generated time: "+str(curr_time-start_time))
                 self.save_img(inpaint_image, f"{model_name}_"+prompt)
@@ -236,8 +235,8 @@ class GradioWindow():
         image, mask, w_orig, h_orig, cropped_image, cropped_mask, bbox = self.prepare_input(self.original_img, self.masks)
 
         self.generating_image(
-            # self.stable_diffusion,
-            self.kandinsky,
+            self.stable_diffusion,
+            # self.kandinsky,
             image, mask,
             cropped_image, cropped_mask,
             iter_number, guidance_scale,

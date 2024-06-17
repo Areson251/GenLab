@@ -5,7 +5,7 @@ from scripts.kandinsky3 import get_inpainting_pipeline
 
 class Kandinsky3Model():
     def __init__(self) -> None:
-        self.device = torch.device('cuda:1')
+        self.device = torch.device('cuda')
         print("DEVICE FOR KANDINSKY: ", self.device)
 
         self.dtype_map = {
@@ -27,7 +27,7 @@ class Kandinsky3Model():
             steps=iter_number,
             text=positive_prompt, 
             image=image, 
-            mask=mask,
+            mask=np.array(mask),
             guidance_weight_text=guidance_scale,
             )
         inpaint_image = inpaint_images[0]

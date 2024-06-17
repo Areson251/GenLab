@@ -75,17 +75,18 @@ accelerate launch scripts/dreambooth/train_dreambooth_inpaint.py \
   --report_to="wandb" 
   ```
 
-accelerate launch scripts/dreambooth/train_dreambooth.py \
-  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2"  \
-  --instance_data_dir="custom_datasets/pothole" \
-  --output_dir="model_output/db_pothole" \
-  --instance_prompt="a photo of sks pothole" \
+accelerate launch scripts/dreambooth/train_dreambooth_inpaint.py \
+  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting"  \
+  --instance_data_dir="custom_datasets/stone" \
+  --annotation_path="custom_datasets/stone.json" \
+  --output_dir="model_output/db_inp_stone_sd2" \
+  --instance_prompt="sks stone" \
   --resolution=512 \
   --train_batch_size=2 \
   --gradient_accumulation_steps=1 \
   --learning_rate=5e-6 \
   --lr_scheduler="constant" \
   --lr_warmup_steps=0 \
-  --max_train_steps=1000 \
-  --checkpointing_steps=1000 \
+  --max_train_steps=6000 \
+  --checkpointing_steps=2000 \
   --report_to="wandb" 

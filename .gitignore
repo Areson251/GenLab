@@ -11,6 +11,8 @@ wandb/
 model_output/
 models/
 
+custom_datasets/INSTSnowRoadDetection
+
 *.png
 # *.jpg
 *.log
