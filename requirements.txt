@@ -2,7 +2,6 @@ accelerate==0.29.2
 aiofiles==23.2.1
 altair==5.3.0
 annotated-types==0.7.0
-antlr4-python3-runtime==4.9.3
 anyio==4.4.0
 appdirs==1.4.4
 appnope==0.1.4
@@ -23,7 +22,6 @@ decorator==5.1.1
 diffusers==0.27.2
 dnspython==2.6.1
 docker-pycreds==0.4.0
-einops==0.8.0
 email_validator==2.1.1
 exceptiongroup==1.2.1
 executing==2.0.1
@@ -38,8 +36,8 @@ future==1.0.0
 gitdb==4.0.11
 GitPython==3.1.43
 glfw==2.7.0
-gradio==4.32.2
-gradio_client==0.17.0
+gradio==4.36.1
+gradio_client==1.0.1
 h11==0.14.0
 httpcore==1.0.5
 httptools==0.6.1
@@ -58,7 +56,6 @@ jsonschema-specifications==2023.12.1
 jupyter_client==8.6.0
 jupyter_core==5.7.1
 kiwisolver==1.4.5
-lazy_loader==0.4
 markdown-it-py==3.0.0
 MarkupSafe==2.1.5
 matplotlib==3.7.5
@@ -81,8 +78,8 @@ nvidia-cusparse-cu12==12.1.0.106
 nvidia-nccl-cu12==2.19.3
 nvidia-nvjitlink-cu12==12.4.127
 nvidia-nvtx-cu12==12.1.105
-omegaconf==2.3.0
-orjson==3.10.3
+opencv-python==4.10.0.84
+orjson==3.10.4
 packaging==23.2
 pandas==2.0.3
 parso==0.8.3
@@ -97,6 +94,7 @@ protobuf==4.25.3
 psutil==5.9.8
 ptyprocess==0.7.0
 pure-eval==0.2.2
+pycocotools==2.0.7
 pycparser==2.21
 pydantic==2.7.3
 pydantic_core==2.18.4
@@ -107,7 +105,6 @@ python-dateutil==2.9.0.post0
 python-dotenv==1.0.1
 python-multipart==0.0.9
 pytz==2024.1
-PyWavelets==1.4.1
 PyYAML==6.0.1
 pyzmq==25.1.2
 referencing==0.35.1
@@ -117,7 +114,6 @@ rich==13.7.1
 rpds-py==0.18.0
 ruff==0.3.2
 safetensors==0.4.2
-scikit-image==0.21.0
 scipy==1.10.1
 segment-anything==1.0
 semantic-version==2.10.0
@@ -135,7 +131,6 @@ stack-data==0.6.3
 starlette==0.37.2
 sympy==1.12
 tensorboard-data-server==0.7.2
-tifffile==2023.7.10
 tokenizers==0.15.2
 tomlkit==0.12.0
 toolz==0.12.1

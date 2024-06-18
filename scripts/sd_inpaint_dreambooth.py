@@ -24,9 +24,9 @@ class StableDiffusionModel():
         text_encoder = CLIPTextModel.from_pretrained(self.dreambooth_checkpoint+"/text_encoder")
 
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(
-            self.dreambooth_checkpoint+"/checkpoint-1000", unet=unet, text_encoder=text_encoder
+            self.dreambooth_checkpoint, unet=unet, text_encoder=text_encoder
         ).to("cuda")
-        self.pipe.scheduler = DDIMScheduler.from_config(self.dreambooth_checkpoint+"/checkpoint-1000")
+        self.pipe.scheduler = DDIMScheduler.from_config(self.dreambooth_checkpoint)
 
     def load_textual_inversion(self):
         self.pipe.load_textual_inversion(self.textual_inversion_checkpoint)
