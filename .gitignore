@@ -12,6 +12,7 @@ model_output/
 models/
 
 custom_datasets/INSTSnowRoadDetection
+augmented_dataset*
 
 *.png
 # *.jpg
