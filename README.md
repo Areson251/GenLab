@@ -74,19 +74,3 @@ accelerate launch scripts/dreambooth/train_dreambooth_inpaint.py \
   --checkpointing_steps=2000 \
   --report_to="wandb" 
   ```
-
-accelerate launch scripts/dreambooth/train_dreambooth_inpaint.py \
-  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting"  \
-  --instance_data_dir="custom_datasets/snowy_pothole" \
-  --annotation_path="custom_datasets/snowy_pothole.json" \
-  --output_dir="model_output/db_inp_snowy_pothole_sd2-2" \
-  --instance_prompt="snw pothole" \
-  --resolution=512 \
-  --train_batch_size=2 \
-  --gradient_accumulation_steps=1 \
-  --learning_rate=5e-6 \
-  --lr_scheduler="constant" \
-  --lr_warmup_steps=0 \
-  --max_train_steps=10000 \
-  --checkpointing_steps=2000 \
-  --report_to="wandb" 
