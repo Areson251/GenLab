@@ -8,7 +8,7 @@ pip install -r requirements.txt
 ```
 
 ## Training
-Also this instrument support training diffusion odels on custom datasets via **Textual inversion** and **DreamBooth** using about ~3-5 images of targeted object
+Also this instrument support training diffusion models on custom datasets via **Textual inversion** and **DreamBooth** using about ~3-5 images of targeted object
 
 ### Textual inversion
 To run trainig use folowing sommand:

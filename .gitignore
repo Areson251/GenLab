@@ -10,6 +10,7 @@ images/left_label
 wandb/
 model_output/
 models/
+datasets/
 
 custom_datasets/INSTSnowRoadDetection
 augmented_dataset*

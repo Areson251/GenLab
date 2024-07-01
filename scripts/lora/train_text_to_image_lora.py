@@ -1,13 +1,28 @@
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2024 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""Fine-tuning script for Stable Diffusion for text2image with support for LoRA."""
+
 import argparse
 import logging
 import math
-import sys
 import os
 import random
 import shutil
 from contextlib import nullcontext
 from pathlib import Path
-import json
 
 import datasets
 import numpy as np
@@ -26,10 +41,6 @@ from peft.utils import get_peft_model_state_dict
 from torchvision import transforms
 from tqdm.auto import tqdm
 from transformers import CLIPTextModel, CLIPTokenizer
-from safetensors.torch import load_model
-from torch.utils.data import Dataset
-from pycocotools.coco import COCO
-from PIL import Image, ImageDraw
 
 import diffusers
 from diffusers import AutoencoderKL, DDPMScheduler, DiffusionPipeline, StableDiffusionPipeline, UNet2DConditionModel
@@ -39,11 +50,6 @@ from diffusers.utils import check_min_version, convert_state_dict_to_diffusers, 
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
-
-sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/scripts/')
-from PowerPaint.pipeline.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
-from utils.utils import TokenizerWrapper, add_tokens
-from power_paint_accelerate_entity import infer, parse_task_params
 
 
 if is_wandb_available():
@@ -69,7 +75,7 @@ def save_model_card(
             img_str += f"![img_{i}](./image_{i}.png)\n"
 
     model_description = f"""
-# LoRA inpainting fine-tuning - {repo_id}
+# LoRA text2image fine-tuning - {repo_id}
 These are LoRA adaption weights for {base_model}. The weights were fine-tuned on the {dataset_name} dataset. You can find some example images in the following. \n
 {img_str}
 """
@@ -96,48 +102,6 @@ These are LoRA adaption weights for {base_model}. The weights were fine-tuned on
     model_card.save(os.path.join(repo_folder, "README.md"))
 
 
-def prepare_mask_and_masked_image(image, mask):
-    image = np.array(image.convert("RGB"))
-    image = image[None].transpose(0, 3, 1, 2)
-    image = torch.from_numpy(image).to(dtype=torch.float32) / 127.5 - 1.0
-
-    mask = np.array(mask.convert("L"))
-    mask = mask.astype(np.float32) / 255.0
-    mask = mask[None, None]
-    mask[mask < 0.5] = 0
-    mask[mask >= 0.5] = 1
-    mask = torch.from_numpy(mask)
-
-    masked_image = image * (mask < 0.5)
-
-    return mask, masked_image
-
-
-# generate random masks
-def random_mask(im_shape, ratio=1, mask_full_image=False):
-    mask = Image.new("L", im_shape, 0)
-    draw = ImageDraw.Draw(mask)
-    size = (random.randint(0, int(im_shape[0] * ratio)), random.randint(0, int(im_shape[1] * ratio)))
-    # use this to always mask the whole image
-    if mask_full_image:
-        size = (int(im_shape[0] * ratio), int(im_shape[1] * ratio))
-    limits = (im_shape[0] - size[0] // 2, im_shape[1] - size[1] // 2)
-    center = (random.randint(size[0] // 2, limits[0]), random.randint(size[1] // 2, limits[1]))
-    draw_type = random.randint(0, 1)
-    if draw_type == 0 or mask_full_image:
-        draw.rectangle(
-            (center[0] - size[0] // 2, center[1] - size[1] // 2, center[0] + size[0] // 2, center[1] + size[1] // 2),
-            fill=255,
-        )
-    else:
-        draw.ellipse(
-            (center[0] - size[0] // 2, center[1] - size[1] // 2, center[0] + size[0] // 2, center[1] + size[1] // 2),
-            fill=255,
-        )
-
-    return mask
-
-
 def log_validation(
     pipeline,
     args,
@@ -160,16 +124,9 @@ def log_validation(
     else:
         autocast_ctx = torch.autocast(accelerator.device.type)
 
-    
     with autocast_ctx:
         for _ in range(args.num_validation_images):
-            # images.append(pipeline(args.validation_prompt, num_inference_steps=30, generator=generator).images[0])
-            inpaint_result, gallery = infer(
-                        pipeline,
-                        image_one,
-                        *parse_task_params(image_one)
-                    )
-            images.append(inpaint_result)
+            images.append(pipeline(args.validation_prompt, num_inference_steps=30, generator=generator).images[0])
 
     for tracker in accelerator.trackers:
         phase_name = "test" if is_final_validation else "validation"
@@ -185,146 +142,6 @@ def log_validation(
                 }
             )
     return images
-
-
-class CustomDataset(Dataset):
-    """
-    A dataset to prepare the instance and class images with the prompts for fine-tuning the model.
-    It pre-processes the images and the tokenizes prompts.
-    """
-
-    def __init__(
-        self,
-        instance_data_root,
-        tokenizer,
-        class_data_root=None,
-        size=512,
-        center_crop=False,
-    ):
-        self.size = size
-        self.center_crop = center_crop
-        self.tokenizer = tokenizer
-
-        self.instance_data_root = Path(instance_data_root)
-        if not self.instance_data_root.exists():
-            raise ValueError("Instance images root doesn't exists.")
-
-        self.instance_images_path = list(Path(instance_data_root).iterdir())
-        self.num_instance_images = len(self.instance_images_path)
-        self.instance_prompt = None
-        self._length = self.num_instance_images
-        self.categories = {elem["id"]:elem["name"] for elem in metainfo.dataset["categories"]}
-
-        if class_data_root is not None:
-            self.class_data_root = Path(class_data_root)
-            self.class_data_root.mkdir(parents=True, exist_ok=True)
-            self.class_images_path = list(self.class_data_root.iterdir())
-            self.num_class_images = len(self.class_images_path)
-            self._length = max(self.num_class_images, self.num_instance_images)
-        else:
-            self.class_data_root = None
-
-        self.image_transforms_resize_and_crop = transforms.Compose(
-            [
-                transforms.Resize(size, interpolation=transforms.InterpolationMode.BILINEAR),
-                transforms.CenterCrop(size) if center_crop else transforms.RandomCrop(size),
-            ]
-        )
-
-        self.image_transforms = transforms.Compose(
-            [
-                transforms.ToTensor(),
-                transforms.Normalize([0.5], [0.5]),
-            ]
-        )
-
-    def __len__(self):
-        return self._length
-
-    def __getitem__(self, index):
-        example = {}
-
-        image_path = self.instance_images_path[index % self.num_instance_images]
-        image_name = str(image_path).split("/")[-1]
-        imgs = metainfo.dataset["images"]
-
-        img_id = [d["id"] for d in imgs if d["file_name"]==image_name][0]
-        image_data = metainfo.loadImgs(ids=[img_id])[0]
-        example["image_data"] = image_data
-
-        instance_image = Image.open(image_path)
-        if not instance_image.mode == "RGB":
-            instance_image = instance_image.convert("RGB")
-        instance_image = self.image_transforms_resize_and_crop(instance_image)
-
-        example["PIL_images"] = instance_image
-        example["instance_images"] = self.image_transforms(instance_image)
-
-        if metainfo:
-            # load data for current image
-            anns_ids = metainfo.getAnnIds(imgIds=[image_data["id"]])
-            masks = metainfo.loadAnns(ids=anns_ids)
-
-            # if image has a few instances -> choose random bbox as mask
-            mask_rle = random.choice(masks)
-            bbox = [int(elem) for elem in mask_rle["bbox"]]
-            mask = np.zeros((image_data["height"], image_data["width"]))
-            mask[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]] = 1
-            # mask = metainfo.annToMask(mask_rle)
-            mask = Image.fromarray(np.uint8(mask)).convert('RGB')
-
-            # mask = self.image_transforms_resize(mask)
-            mask = self.image_transforms_resize_and_crop(mask)
-            example["PIL_masks"] = mask
-            example["instance_masks"] = self.image_transforms(mask)
-            example["instance_masks"] = mask
-            self.instance_prompt = self.categories[mask_rle["category_id"]]
-
-        example["instance_prompt_ids"] = self.tokenizer(
-            self.instance_prompt,
-            padding="do_not_pad",
-            truncation=True,
-            max_length=self.tokenizer.model_max_length,
-        ).input_ids
-
-        if self.class_data_root:
-            class_image = Image.open(self.class_images_path[index % self.num_class_images])
-            if not class_image.mode == "RGB":
-                class_image = class_image.convert("RGB")
-            class_image = self.image_transforms_resize_and_crop(class_image)
-            example["class_images"] = self.image_transforms(class_image)
-            example["class_PIL_images"] = class_image
-            example["class_prompt_ids"] = self.tokenizer(
-                self.class_prompt,
-                padding="do_not_pad",
-                truncation=True,
-                max_length=self.tokenizer.model_max_length,
-            ).input_ids
-
-        return example
-
-
-def prepare_pipe():
-    torch.set_grad_enabled(True)
-    global weight_dtype
-    weight_dtype = torch.float16
-
-    pipe = Pipeline.from_pretrained("runwayml/stable-diffusion-inpainting", torch_dtype=weight_dtype)
-    pipe.tokenizer = TokenizerWrapper(
-        from_pretrained="runwayml/stable-diffusion-v1-5", subfolder="tokenizer", revision=None
-    )
-
-    add_tokens(
-        tokenizer=pipe.tokenizer,
-        text_encoder=pipe.text_encoder,
-        placeholder_tokens=["P_ctxt", "P_shape", "P_obj"],
-        initialize_tokens=["a", "a", "a"],
-        num_vectors_per_token=10,
-    )
-
-    load_model(pipe.unet, "./models/unet/unet.safetensors")
-    load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors")
-    return pipe
 
 
 def parse_args():
@@ -602,28 +419,21 @@ def parse_args():
         help=("The dimension of the LoRA update matrices."),
     )
 
-    parser.add_argument(
-        "--annotation_path", type=str, default=None, help="Path to COCO annotation if you want to train in custom masks"
-    )
-
-    parser.add_argument(
-        "--instance_data_dir",
-        type=str,
-        default=None,
-        required=True,
-        help="A folder containing the training data of instance images.",
-    )
-
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
         args.local_rank = env_local_rank
 
     # Sanity checks
-    if args.dataset_name is None and args.train_data_dir is None and args.instance_data_dir is None:
+    if args.dataset_name is None and args.train_data_dir is None:
         raise ValueError("Need either a dataset name or a training folder.")
 
     return args
+
+
+DATASET_NAME_MAPPING = {
+    "lambdalabs/naruto-blip-captions": ("image", "text"),
+}
 
 
 def main():
@@ -678,27 +488,24 @@ def main():
             repo_id = create_repo(
                 repo_id=args.hub_model_id or Path(args.output_dir).name, exist_ok=True, token=args.hub_token
             ).repo_id
-
-    def unwrap_model(model):
-        model = accelerator.unwrap_model(model)
-        model = model._orig_mod if is_compiled_module(model) else model
-        return model
-    
-    # prepare pipe for PowerPaint
-    pipe = prepare_pipe()
-
     # Load scheduler, tokenizer and models.
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
-    tokenizer = pipe.tokenizer
-    text_encoder = pipe.text_encoder
-    vae = pipe.vae
-    unet = pipe.unet
-    
+    tokenizer = CLIPTokenizer.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="tokenizer", revision=args.revision
+    )
+    text_encoder = CLIPTextModel.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="text_encoder", revision=args.revision
+    )
+    vae = AutoencoderKL.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="vae", revision=args.revision, variant=args.variant
+    )
+    unet = UNet2DConditionModel.from_pretrained(
+        args.pretrained_model_name_or_path, subfolder="unet", revision=args.revision, variant=args.variant
+    )
     # freeze parameters of models to save more memory
     unet.requires_grad_(False)
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
-
 
     # For mixed precision training we cast all non-trainable weights (vae, non-lora text_encoder and non-lora unet) to half-precision
     # as these weights are only used for inference, keeping weights in full precision is not required.
@@ -779,60 +586,106 @@ def main():
         eps=args.adam_epsilon,
     )
 
-    # Dataset and DataLoaders creation:
-    # Dataset should be in COCO format
-    global metainfo 
-    metainfo = None
+    # Get the datasets: you can either provide your own training and evaluation files (see below)
+    # or specify a Dataset from the hub (the dataset will be downloaded automatically from the datasets Hub).
 
-    if args.annotation_path:
-        # with open(args.annotation_path, 'r') as jsonFile:
-        #     metainfo = json.load(jsonFile)
-        # file_idxs = list(metainfo.keys())
-        # print("Total images: ", len(file_idxs))
-        metainfo = COCO(args.annotation_path)
-        
-    train_dataset = CustomDataset(
-        instance_data_root=args.instance_data_dir,
-        tokenizer=tokenizer,
-        size=args.resolution,
-        center_crop=args.center_crop,
+    # In distributed training, the load_dataset function guarantees that only one local process can concurrently
+    # download the dataset.
+    if args.dataset_name is not None:
+        # Downloading and loading a dataset from the hub.
+        dataset = load_dataset(
+            args.dataset_name,
+            args.dataset_config_name,
+            cache_dir=args.cache_dir,
+            data_dir=args.train_data_dir,
+        )
+    else:
+        data_files = {}
+        if args.train_data_dir is not None:
+            data_files["train"] = os.path.join(args.train_data_dir, "**")
+        dataset = load_dataset(
+            "imagefolder",
+            data_files=data_files,
+            cache_dir=args.cache_dir,
+        )
+        # See more about loading custom images at
+        # https://huggingface.co/docs/datasets/v2.4.0/en/image_load#imagefolder
+
+    # Preprocessing the datasets.
+    # We need to tokenize inputs and targets.
+    column_names = dataset["train"].column_names
+
+    # 6. Get the column names for input/target.
+    dataset_columns = DATASET_NAME_MAPPING.get(args.dataset_name, None)
+    if args.image_column is None:
+        image_column = dataset_columns[0] if dataset_columns is not None else column_names[0]
+    else:
+        image_column = args.image_column
+        if image_column not in column_names:
+            raise ValueError(
+                f"--image_column' value '{args.image_column}' needs to be one of: {', '.join(column_names)}"
+            )
+    if args.caption_column is None:
+        caption_column = dataset_columns[1] if dataset_columns is not None else column_names[1]
+    else:
+        caption_column = args.caption_column
+        if caption_column not in column_names:
+            raise ValueError(
+                f"--caption_column' value '{args.caption_column}' needs to be one of: {', '.join(column_names)}"
+            )
+
+    # Preprocessing the datasets.
+    # We need to tokenize input captions and transform the images.
+    def tokenize_captions(examples, is_train=True):
+        captions = []
+        for caption in examples[caption_column]:
+            if isinstance(caption, str):
+                captions.append(caption)
+            elif isinstance(caption, (list, np.ndarray)):
+                # take a random caption if there are multiple
+                captions.append(random.choice(caption) if is_train else caption[0])
+            else:
+                raise ValueError(
+                    f"Caption column `{caption_column}` should contain either strings or lists of strings."
+                )
+        inputs = tokenizer(
+            captions, max_length=tokenizer.model_max_length, padding="max_length", truncation=True, return_tensors="pt"
+        )
+        return inputs.input_ids
+
+    # Preprocessing the datasets.
+    train_transforms = transforms.Compose(
+        [
+            transforms.Resize(args.resolution, interpolation=transforms.InterpolationMode.BILINEAR),
+            transforms.CenterCrop(args.resolution) if args.center_crop else transforms.RandomCrop(args.resolution),
+            transforms.RandomHorizontalFlip() if args.random_flip else transforms.Lambda(lambda x: x),
+            transforms.ToTensor(),
+            transforms.Normalize([0.5], [0.5]),
+        ]
     )
 
-    # TODO: add ability to use max_train_samples
-    # with accelerator.main_process_first():
-    #     if args.max_train_samples is not None:
-    #         train_dataset["train"] = train_dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+    def unwrap_model(model):
+        model = accelerator.unwrap_model(model)
+        model = model._orig_mod if is_compiled_module(model) else model
+        return model
+
+    def preprocess_train(examples):
+        images = [image.convert("RGB") for image in examples[image_column]]
+        examples["pixel_values"] = [train_transforms(image) for image in images]
+        examples["input_ids"] = tokenize_captions(examples)
+        return examples
+
+    with accelerator.main_process_first():
+        if args.max_train_samples is not None:
+            dataset["train"] = dataset["train"].shuffle(seed=args.seed).select(range(args.max_train_samples))
+        # Set the training transforms
+        train_dataset = dataset["train"].with_transform(preprocess_train)
 
     def collate_fn(examples):
-        input_ids = [example["instance_prompt_ids"] for example in examples]
-        pixel_values = [example["instance_images"] for example in examples]
-
-        masks = []
-        masked_images = []
-        for example in examples:
-            pil_image = example["PIL_images"]
-            if args.annotation_path:
-                # load data for current image
-                mask = example["instance_masks"]
-
-            else:
-                # generate a random mask
-                mask = random_mask(pil_image.size, 1, False)
-
-            # prepare mask and masked image
-            mask, masked_image = prepare_mask_and_masked_image(pil_image, mask)
-
-            masks.append(mask)
-            masked_images.append(masked_image)
-
-        pixel_values = torch.stack(pixel_values)
+        pixel_values = torch.stack([example["pixel_values"] for example in examples])
         pixel_values = pixel_values.to(memory_format=torch.contiguous_format).float()
-
-        input_ids = tokenizer.pad({"input_ids": input_ids}, padding=True, return_tensors="pt").input_ids
-        masks = torch.stack(masks)
-        masked_images = torch.stack(masked_images)
-        batch = {"input_ids": input_ids, "pixel_values": pixel_values, "masks": masks, "masked_images": masked_images}
-        return batch
+        input_ids = torch.stack([example["input_ids"] for example in examples])
+        return {"pixel_values": pixel_values, "input_ids": input_ids}
 
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
@@ -840,7 +693,7 @@ def main():
         shuffle=True,
         collate_fn=collate_fn,
         batch_size=args.train_batch_size,
-        # num_workers=args.dataloader_num_workers,
+        num_workers=args.dataloader_num_workers,
     )
 
     # Scheduler and math around the number of training steps.
@@ -883,7 +736,7 @@ def main():
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        accelerator.init_trackers("inpainting-fine-tune", config=vars(args))
+        accelerator.init_trackers("text2image-fine-tune", config=vars(args))
 
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -942,22 +795,6 @@ def main():
                 latents = vae.encode(batch["pixel_values"].to(dtype=weight_dtype)).latent_dist.sample()
                 latents = latents * vae.config.scaling_factor
 
-                # Convert masked images to latent space
-                masked_latents = vae.encode(
-                    batch["masked_images"].reshape(batch["pixel_values"].shape).to(dtype=weight_dtype)
-                ).latent_dist.sample()
-                masked_latents = masked_latents * vae.config.scaling_factor
-
-                masks = batch["masks"]
-                # resize the mask to latents shape as we concatenate the mask to the latents
-                mask = torch.stack(
-                    [
-                        torch.nn.functional.interpolate(mask, size=(args.resolution // 8, args.resolution // 8))
-                        for mask in masks
-                    ]
-                )
-                mask = mask.reshape(-1, 1, args.resolution // 8, args.resolution // 8)
-
                 # Sample noise that we'll add to the latents
                 noise = torch.randn_like(latents)
                 if args.noise_offset:
@@ -989,12 +826,9 @@ def main():
                     target = noise_scheduler.get_velocity(latents, noise, timesteps)
                 else:
                     raise ValueError(f"Unknown prediction type {noise_scheduler.config.prediction_type}")
-                
-                # concatenate the noised latents with the mask and the masked latents
-                latent_model_input = torch.cat([noisy_latents, mask, masked_latents], dim=1)
 
                 # Predict the noise residual and compute loss
-                model_pred = unet(latent_model_input, timesteps, encoder_hidden_states, return_dict=False)[0]
+                model_pred = unet(noisy_latents, timesteps, encoder_hidden_states, return_dict=False)[0]
 
                 if args.snr_gamma is None:
                     loss = F.mse_loss(model_pred.float(), target.float(), reduction="mean")
@@ -1065,7 +899,7 @@ def main():
                             get_peft_model_state_dict(unwrapped_unet)
                         )
 
-                        Pipeline.save_lora_weights(
+                        StableDiffusionPipeline.save_lora_weights(
                             save_directory=save_path,
                             unet_lora_layers=unet_lora_state_dict,
                             safe_serialization=True,
@@ -1079,21 +913,20 @@ def main():
             if global_step >= args.max_train_steps:
                 break
 
-        # if accelerator.is_main_process:
-        #     if args.validation_prompt is not None and epoch % args.validation_epochs == 0:
-        #         # create pipeline
-        #         # pipeline = DiffusionPipeline.from_pretrained(
-        #         #     args.pretrained_model_name_or_path,
-        #         #     unet=unwrap_model(unet),
-        #         #     revision=args.revision,
-        #         #     variant=args.variant,
-        #         #     torch_dtype=weight_dtype,
-        #         # )
-        #         pipeline = prepare_pipe()
-        #         images = log_validation(pipeline, args, accelerator, epoch)
+        if accelerator.is_main_process:
+            if args.validation_prompt is not None and epoch % args.validation_epochs == 0:
+                # create pipeline
+                pipeline = DiffusionPipeline.from_pretrained(
+                    args.pretrained_model_name_or_path,
+                    unet=unwrap_model(unet),
+                    revision=args.revision,
+                    variant=args.variant,
+                    torch_dtype=weight_dtype,
+                )
+                images = log_validation(pipeline, args, accelerator, epoch)
 
-        #         del pipeline
-        #         torch.cuda.empty_cache()
+                del pipeline
+                torch.cuda.empty_cache()
 
     # Save the lora layers
     accelerator.wait_for_everyone()
@@ -1102,7 +935,7 @@ def main():
 
         unwrapped_unet = unwrap_model(unet)
         unet_lora_state_dict = convert_state_dict_to_diffusers(get_peft_model_state_dict(unwrapped_unet))
-        Pipeline.save_lora_weights(
+        StableDiffusionPipeline.save_lora_weights(
             save_directory=args.output_dir,
             unet_lora_layers=unet_lora_state_dict,
             safe_serialization=True,
@@ -1110,19 +943,19 @@ def main():
 
         # Final inference
         # Load previous pipeline
-        # if args.validation_prompt is not None:
-        #     pipeline = DiffusionPipeline.from_pretrained(
-        #         args.pretrained_model_name_or_path,
-        #         revision=args.revision,
-        #         variant=args.variant,
-        #         torch_dtype=weight_dtype,
-        #     )
+        if args.validation_prompt is not None:
+            pipeline = DiffusionPipeline.from_pretrained(
+                args.pretrained_model_name_or_path,
+                revision=args.revision,
+                variant=args.variant,
+                torch_dtype=weight_dtype,
+            )
 
-        #     # load attention processors
-        #     pipeline.load_lora_weights(args.output_dir)
+            # load attention processors
+            pipeline.load_lora_weights(args.output_dir)
 
-        #     # run inference
-        #     images = log_validation(pipeline, args, accelerator, epoch, is_final_validation=True)
+            # run inference
+            images = log_validation(pipeline, args, accelerator, epoch, is_final_validation=True)
 
         if args.push_to_hub:
             save_model_card(
@@ -1141,6 +974,6 @@ def main():
 
     accelerator.end_training()
 
-    
+
 if __name__ == "__main__":
     main()

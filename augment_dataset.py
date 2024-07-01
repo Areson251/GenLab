@@ -355,6 +355,9 @@ class AugmentDataset():
             avg_total_time += time.time() - start_time
             self.logger.info(f"Average generation time: {avg_generation_time/(idx+1)}")
 
+            if idx == 2:
+                break
+
         with open(f"{self.output_path}/annotation.json", 'w') as fp:
             (json.dump(self.annotation, fp))
 

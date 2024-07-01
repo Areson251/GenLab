@@ -34,6 +34,7 @@ RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     libffi-dev \
     liblzma-dev \
     python3-venv \
+    git-lfs \
     && rm -rf /var/lib/apt/lists/*
 
 # symlink for python3
