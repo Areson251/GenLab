@@ -266,19 +266,27 @@ class CustomDataset(Dataset):
             masks = metainfo.loadAnns(ids=anns_ids)
 
             # if image has a few instances -> choose random bbox as mask
-            mask_rle = random.choice(masks)
-            bbox = [int(elem) for elem in mask_rle["bbox"]]
-            mask = np.zeros((image_data["height"], image_data["width"]))
-            mask[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]] = 1
-            # mask = metainfo.annToMask(mask_rle)
-            mask = Image.fromarray(np.uint8(mask)).convert('RGB')
+            # print("image_name: ", image_name)
+            # print("len: ", len(masks))
 
+            if len(masks):
+                mask_rle = random.choice(masks)
+                bbox = [int(elem) for elem in mask_rle["bbox"]]
+                mask = np.zeros((image_data["height"], image_data["width"]))
+                mask[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]] = 1
+                # mask = metainfo.annToMask(mask_rle)
+                mask = Image.fromarray(np.uint8(mask)).convert('RGB')
+                self.instance_prompt = self.categories[mask_rle["category_id"]]
+
+            else: 
+                mask = random_mask(instance_image.size)
+                self.instance_prompt = "fill the gap"
+                
             # mask = self.image_transforms_resize(mask)
             mask = self.image_transforms_resize_and_crop(mask)
             example["PIL_masks"] = mask
             example["instance_masks"] = self.image_transforms(mask)
             example["instance_masks"] = mask
-            self.instance_prompt = self.categories[mask_rle["category_id"]]
 
         example["instance_prompt_ids"] = self.tokenizer(
             self.instance_prompt,

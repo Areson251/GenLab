@@ -1,42 +1,28 @@
 ### PowerPaint tuning via LoRA-inpainting 
 To run use folowing sommand:
 ```
-accelerate launch --mixed_precision="fp16"  scripts/lora/train_inpainting_lora.py \
+accelerate launch --main_process_port=12547 scripts/lora/train_inpainting_lora.py \
   --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
-  --dataset_name="custom_datasets/snowy_pothole" \
+  --instance_data_dir="datasets/original/COCO2014/images/train" \
+  --annotation_path="datasets/original/COCO2014/annotations/instances_train2014.json" \
   --dataloader_num_workers=1 \
   --resolution=512 \
-  --train_batch_size=1 \
+  --train_batch_size=4 \
   --gradient_accumulation_steps=4 \
   --max_train_steps=15000 \
   --learning_rate=1e-04 \
   --max_grad_norm=1 \
   --lr_scheduler="cosine" \
   --lr_warmup_steps=0 \
-  --output_dir="model_output/lora_snowy-pothole_sd15" \
-  --report_to=wandb \
-  --checkpointing_steps=500 \
-  --validation_prompt="snowy pothole." \
+  --output_dir="model_output/lora_COCO_sd15" \
+  --checkpointing_steps=2000 \
+  --validation_prompt="snowy_pothole" \
   --seed=1337
 ```
 
-accelerate launch --mixed_precision="fp16"  scripts/lora/train_inpainting_lora.py \
-accelerate launch scripts/lora/train_inpainting_lora.py \
-  --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
-  --instance_data_dir="custom_datasets/snowy_pothole" \
-  --annotation_path="custom_datasets/snowy_pothole.json" \
-  --dataloader_num_workers=1 \
-  --resolution=512 \
-  --train_batch_size=1 \
-  --gradient_accumulation_steps=4 \
-  --max_train_steps=1 \
-  --learning_rate=1e-04 \
-  --max_grad_norm=1 \
-  --lr_scheduler="cosine" \
-  --lr_warmup_steps=0 \
-  --output_dir="model_output/lora_snowy-pothole_sd15" \
-  --checkpointing_steps=1 \
-  --validation_prompt="snowy_pothole" \
-  --seed=1337
+#### Prepare dataset
+If you have VOC dataset format use folowwing command:
 
-  --report_to=wandb \
+```
+python scripts/utils/voc2coco.py --root_dir="datasets/original/VOC2012" 
+```

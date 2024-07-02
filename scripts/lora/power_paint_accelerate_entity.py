@@ -623,6 +623,11 @@ def main(args):
 
     load_model(pipe.unet, "./models/unet/unet.safetensors")
     load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors")
+
+    # load lora weights 
+    if args.lora_weights:
+        pipe.load_lora_weights(args.lora_weights, weight_name="pytorch_lora_weights.safetensors")
+
     pipe = pipe.to(accelerator.device)
     print(accelerator.device)
     with accelerator.split_between_processes(file_idxs) as chunked_files:
@@ -702,6 +707,7 @@ if __name__ == "__main__":
     parser.add_argument("--images_path", type=str, required=True)
     parser.add_argument("--json_path", type=str, required=True)
     parser.add_argument("--output_path", type=str, required=True)
+    parser.add_argument("--lora_weights", type=str, default=None)
     args = parser.parse_args()
     
     main(args)
