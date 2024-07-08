@@ -7,16 +7,16 @@ accelerate launch --main_process_port=12547 scripts/lora/train_inpainting_lora.p
   --annotation_path="datasets/original/COCO2014/annotations/instances_train2014.json" \
   --dataloader_num_workers=1 \
   --resolution=512 \
-  --train_batch_size=4 \
-  --gradient_accumulation_steps=4 \
+  --train_batch_size=1 \
+  --gradient_accumulation_steps=8 \
   --max_train_steps=15000 \
-  --learning_rate=1e-04 \
+  --learning_rate=1e-06 \
   --max_grad_norm=1 \
   --lr_scheduler="cosine" \
   --lr_warmup_steps=0 \
-  --output_dir="model_output/lora_COCO_sd15" \
+  --output_dir="model_output/lora_COCO_1e-06" \
   --checkpointing_steps=2000 \
-  --validation_prompt="snowy_pothole" \
+  --report_to="wandb" \
   --seed=1337
 ```
 

@@ -331,7 +331,7 @@ def prepare_pipe():
     )
 
     load_model(pipe.unet, "./models/unet/unet.safetensors")
-    load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors")
+    load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors", strict=False)
     return pipe
 
 

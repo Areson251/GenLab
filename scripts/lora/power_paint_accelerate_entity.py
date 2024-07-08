@@ -3,18 +3,21 @@ import argparse
 import os
 import cv2
 import json
+import sys
 import numpy as np
 import torch
 from accelerate import Accelerator
+from safetensors.torch import load_model
 from controlnet_aux import HEDdetector, OpenposeDetector
 from PIL import Image, ImageFilter
 from transformers import DPTFeatureExtractor, DPTForDepthEstimation
 from pycocotools import mask as mask_utils
 from diffusers.pipelines.controlnet.pipeline_controlnet import ControlNetModel
+
+sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/scripts/')
 from PowerPaint.pipeline.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
 from PowerPaint.pipeline.pipeline_PowerPaint_ControlNet import StableDiffusionControlNetInpaintPipeline as controlnetPipeline
 from utils.utils import TokenizerWrapper, add_tokens
-from safetensors.torch import load_model
 
 
 NEGATIVE_PROMPT = "text, bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, "\
@@ -622,11 +625,12 @@ def main(args):
     )
 
     load_model(pipe.unet, "./models/unet/unet.safetensors")
-    load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors")
+    load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors", strict=False)
 
     # load lora weights 
     if args.lora_weights:
         pipe.load_lora_weights(args.lora_weights, weight_name="pytorch_lora_weights.safetensors")
+        print("Loaded LoRA weights")
 
     pipe = pipe.to(accelerator.device)
     print(accelerator.device)
@@ -662,7 +666,7 @@ def main(args):
 
                     source = image_one['source_image'].copy()
 
-                    orig_path = path + '/' + f"{str(image_one['id'])}_orig.png"
+                    orig_path = path + '/' + f"{str(image_one['id'])}_orig_{obj_}.png"
                     fake_path = path + '/' + f"{str(image_one['id'])}_fake.png"
                     mask_path = path + '/' + f"{str(image_one['id'])}_mask.png"
 
