@@ -24,6 +24,11 @@ NEGATIVE_PROMPT = "text, bad anatomy, bad proportions, blurry, cropped, deformed
                     "duplicate, error, extra limbs, gross proportions, jpeg artifacts, long neck, "\
                     "low quality, low res, malformed, morbid, mutated, mutilated, out of frame, ugly, worst quality"
 
+PROMPT_WATER = "Imagine you are a object replacer. Your task is generating a replacement object instead of the existing object on the "\
+                "scene. It's important that the new object is not the same as the existing one. The existing object. You must give me an object which could be "\
+                f"depicted instead of existing object. So, existing object: " 
+               
+ALLOWDED_IMGS_IDS = ['919', '979', '986', '2022', '2225', '2243', '2249', '2264', '2492']
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -551,7 +556,8 @@ def parse_task_params(image):
     removal_negative_prompt = NEGATIVE_PROMPT
 
     if image["task"] == "text-guided":
-        text_guided_prompt = image["new_object"]
+        text_guided_prompt = PROMPT_WATER + image["new_object"]
+        # text_guided_prompt = image["new_object"]
         scale = 5
         control_type = "depth"
     elif image["task"] == "shape-guided":
@@ -637,6 +643,10 @@ def main(args):
     with accelerator.split_between_processes(file_idxs) as chunked_files:
         for file_id in chunked_files:
             try:
+                if file_id not in ALLOWDED_IMGS_IDS:
+                    print(f"skip {file_id} image")
+                    continue
+
                 image = get_image(args.images_path, metainfo, file_id)
 
                 path = os.path.join(args.output_path, file_id)

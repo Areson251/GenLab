@@ -1,5 +1,26 @@
 ### PowerPaint tuning via LoRA-inpainting 
-To run use folowing sommand:
+This script use COCO annotation format. *--instance_data_dir* is folder with your images and *--annotation_path* is path to annotation in COCO format.
+
+To run training use folowing sommand:
+```
+accelerate launch scripts/lora-inpainting/train_inpainting_lora.py \
+  --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
+  --instance_data_dir=<DATASET FOLDER> \
+  --annotation_path=<COCO ANNOTATION> \
+  --dataloader_num_workers=1 \
+  --resolution=512 \
+  --train_batch_size=4 \
+  --gradient_accumulation_steps=32 \
+  --max_train_steps=15000 \
+  --learning_rate=1e-06 \
+  --max_grad_norm=1 \
+  --lr_scheduler="cosine" \
+  --lr_warmup_steps=0 \
+  --output_dir=<LORA OUTPUT PATH> \
+  --checkpointing_steps=2000 \
+  --report_to="wandb" \
+  --seed=1337
+```
 ```
 accelerate launch --main_process_port=12547 scripts/lora/train_inpainting_lora.py \
   --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
@@ -7,16 +28,15 @@ accelerate launch --main_process_port=12547 scripts/lora/train_inpainting_lora.p
   --annotation_path="datasets/original/COCO2014/annotations/instances_train2014.json" \
   --dataloader_num_workers=1 \
   --resolution=512 \
-  --train_batch_size=1 \
-  --gradient_accumulation_steps=8 \
+  --train_batch_size=4 \
+  --gradient_accumulation_steps=4 \  16 или 32
   --max_train_steps=15000 \
-  --learning_rate=1e-06 \
+  --learning_rate=1e-04 \   поменьше лр сделать
   --max_grad_norm=1 \
   --lr_scheduler="cosine" \
   --lr_warmup_steps=0 \
-  --output_dir="model_output/lora_COCO_1e-06" \
+  --output_dir="model_output/lora_COCO_sd15" \
   --checkpointing_steps=2000 \
-  --report_to="wandb" \
   --seed=1337
 ```
 
