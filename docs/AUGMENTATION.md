@@ -25,8 +25,8 @@ To run augmentation use folowing sommand:
 accelerate launch --main_process_port=12547  --num_processes=1 scripts/lora/power_paint_accelerate_entity.py \
 --images_path="datasets/original/entity_01_11580/images" \
 --json_path="datasets/original/entity_01_11580/train_01_edit.json" \
---output_path="datasets/augmented/lora_inp_tuning/b64_gas4_lr1e-5/entity_base__water" \
---lora_weights="model_output/lora_b64_gas4_lr1e-5/400_steps/pytorch_lora_weights.safetensors"
+--output_path="datasets/augmented/lora_inp_tuning/b64_gas4_lr1e-5/scale2/entity_500_water" \
+--lora_weights="model_output/lora_b64_gas4_lr1e-5/500_steps/pytorch_lora_weights.safetensors"
 ```
 
 --main_process_port=12547 

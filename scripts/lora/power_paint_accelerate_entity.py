@@ -541,7 +541,7 @@ def parse_task_params(image):
     shape_guided_negative_prompt = NEGATIVE_PROMPT
     fitting_degree = 1
     ddim_steps = 50
-    scale = 15
+    scale = 2
     seed = random.randint(0, 1 << 32)
     task = image["task"]
     enable_control = True
