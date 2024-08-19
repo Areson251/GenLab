@@ -1,7 +1,8 @@
 import torch
 import numpy as np
 from PIL import Image
-from diffusers import DDIMScheduler, StableDiffusionInpaintPipeline, StableDiffusionXLInpaintPipeline
+from diffusers import DDIMScheduler, StableDiffusionInpaintPipeline, UNet2DConditionModel
+from transformers import CLIPTextModel
 
 
 class StableDiffusionModel():
@@ -14,11 +15,18 @@ class StableDiffusionModel():
         self.device = torch.device("cuda")
         print("DEVICE FOR SD: ", self.device)
 
+       # dreambooth
+        # unet = UNet2DConditionModel.from_pretrained(self.pretrained+"/unet")
+        # # if you have trained with `--args.train_text_encoder` make sure to also load the text encoder
+        # text_encoder = CLIPTextModel.from_pretrained(self.pretrained+"/text_encoder")
+       
+        # unet = UNet2DConditionModel.from_pretrained(self.pretrained)
+        # text_encoder = CLIPTextModel.from_pretrained(self.pretrained)
+
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(
-            # "runwayml/stable-diffusion-v1-5",
-            # "stabilityai/stable-diffusion-2-inpainting",
-            # "model_output/checkpoint-1000",
             pretrained_model_name_or_path=self.pretrained,
+            # unet=unet, 
+            # text_encoder=text_encoder,
             requires_safety_checker=False,
             safety_checker=None,
             variant='fp16',

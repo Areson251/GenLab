@@ -4,17 +4,12 @@ from diffusers import AutoPipelineForInpainting, KandinskyInpaintPipeline, Kandi
 
 
 class KandinskyModel():
-    def __init__(self) -> None:
+    def __init__(self,
+                pretrained="kandinsky-community/kandinsky-2-2-decoder-inpaint") -> None:
         self.device = torch.device("cuda")
-        # print("DEVICE FOR KANDINSKY: ", self.device)
+        self.pretrained = pretrained
 
-        self.pipe = AutoPipelineForInpainting.from_pretrained(
-        # self.pipe = KandinskyInpaintPipeline.from_pretrained(
-        "kandinsky-community/kandinsky-2-2-decoder-inpaint", 
-            # "kandinsky-community/kandinsky-2-1-inpaint",
-            # torch_dtype=torch.float16
-        # )
-        ).to(self.device)
+        self.pipe = AutoPipelineForInpainting.from_pretrained(self.pretrained).to(self.device)
         # self.pipe.enable_model_cpu_offload()
         
         # remove following line if xFormers is not installed or you have PyTorch 2.0 or higher installed

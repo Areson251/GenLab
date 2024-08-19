@@ -15,8 +15,8 @@ from pycocotools import mask as mask_utils
 from diffusers.pipelines.controlnet.pipeline_controlnet import ControlNetModel
 
 sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/scripts/')
-from PowerPaint.pipeline.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
-from PowerPaint.pipeline.pipeline_PowerPaint_ControlNet import StableDiffusionControlNetInpaintPipeline as controlnetPipeline
+from PowerPaint.powerpaint.pipelines.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
+from PowerPaint.powerpaint.pipelines.pipeline_PowerPaint_ControlNet import StableDiffusionControlNetInpaintPipeline as controlnetPipeline
 from utils.utils import TokenizerWrapper, add_tokens
 
 

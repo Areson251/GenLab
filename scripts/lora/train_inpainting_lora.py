@@ -39,11 +39,11 @@ from diffusers.utils import check_min_version, convert_state_dict_to_diffusers, 
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
+from scripts.power_paint_accelerate_entity import infer, parse_task_params
 
 sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/scripts/')
-from PowerPaint.pipeline.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
+from PowerPaint.powerpaint.pipelines.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
 from utils.utils import TokenizerWrapper, add_tokens
-from power_paint_accelerate_entity import infer, parse_task_params
 
 
 if is_wandb_available():

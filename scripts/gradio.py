@@ -3,14 +3,26 @@ import numpy as np
 import torch
 from PIL import Image
 import gradio as gr
-# from .stable_diffusion import StableDiffusionModel
-from .sd_inpaint_dreambooth import StableDiffusionModel
-# from .kandinsky import KandinskyModel
-# from .kandinsky_3 import Kandinsky3Model
 import logging
 import time 
 
+from .stable_diffusion import StableDiffusionModel 
+from .sd_inpaint_dreambooth import StableDiffusionModel as DreamBoothStableDiffusionModel
+from .kandinsky import KandinskyModel 
+from .kandinsky_3 import Kandinsky3Model 
+from .power_paint_wrapper import PowerPaintModel
+
+
 class GradioWindow():
+    model_base = {
+        "PowerPaint_v2-1": ["PowerPaintModel", "models/PowerPaint/PowerPaint-v2-1"],
+        "StableDiffusion_v1-5": ["StableDiffusionModel", "runwayml/stable-diffusion-v1-5"],
+        "StableDiffusion_v2": ["StableDiffusionModel", "stabilityai/stable-diffusion-2-inpainting"],
+        "StableDiffusionXL": ["StableDiffusionModel", "stabilityai/stable-diffusion-xl-base-1.0"],
+        "Kandinsky_v2-1": ["StableDiffusionModel", "kandinsky-community/kandinsky-2-1-inpaint"],
+        "Kandinsky_v2-2": ["StableDiffusionModel", "stabilityai/stable-diffusion-2-inpainting"],
+    }
+
     def __init__(self) -> None:
         self.path_to_orig_imgs = None
         self.path_to_output_imgs = None
@@ -20,16 +32,14 @@ class GradioWindow():
         self.path_to_ti = None
         self.path_to_db = None
 
+        self.pipe = None
         self.original_img = None
         self.masks = None
         self.prompts = None
         self.logger = None
-        self.stable_diffusion = None 
-        self.kandinsky = None 
 
         #TODO: rewrite time calculating to something goodx
-        self.sd_avg_time = 0
-        self.kandinsky_avg_time = 0
+        self.avg_time = 0
 
         self.folders = []
 
@@ -52,10 +62,8 @@ class GradioWindow():
             self.logger.info("Use prompts from "+self.path_to_prompts)
 
     def load_models(self):
-        self.stable_diffusion = StableDiffusionModel(textual_inversion_checkpoint=self.path_to_ti, 
+        self.pipe = PipeLine(textual_inversion_checkpoint=self.path_to_ti, 
                                                     dreambooth_checkpoint=self.path_to_db)
-        # self.kandinsky = KandinskyModel()
-        # self.kandinsky = Kandinsky3Model()
         self.logger.info("Models loaded")
         print("Models loaded!")
 
@@ -86,12 +94,13 @@ class GradioWindow():
                     self.iter_number = gr.Number(value=20, label="Steps")
                     self.guidance_scale = gr.Number(value=0.7, label="Guidance Scale")
                  with gr.Column():
+                    self.select_model = gr.Dropdown(label="Select model", 
+                                                    choices=self.model_base.keys())
                     self.button_load_models = gr.Button("Load models") 
                     self.button_enter_prompt = gr.Button("Enter prompt")     
 
             with gr.Row():
-                self.kandinsky_image = gr.Image(label="Kandinsky")
-                self.stable_diffusion_image = gr.Image(label="Stable Diffusion")
+                self.augmented_image = gr.Image(label="Augmented image")
 
             # Connect the UI and logic
             self.setup_settings.click(
@@ -121,7 +130,7 @@ class GradioWindow():
             self.button_enter_prompt.click(
                 self.inpaint_image,
                 inputs=[self.iter_number, self.guidance_scale],
-                outputs=[self.kandinsky_image, self.stable_diffusion_image],
+                outputs=[self.augmented_image],
             )
 
      # Define the logic
@@ -235,8 +244,7 @@ class GradioWindow():
         image, mask, w_orig, h_orig, cropped_image, cropped_mask, bbox = self.prepare_input(self.original_img, self.masks)
 
         self.generating_image(
-            self.stable_diffusion,
-            # self.kandinsky,
+            self.pipe,
             image, mask,
             cropped_image, cropped_mask,
             iter_number, guidance_scale,
@@ -244,26 +252,10 @@ class GradioWindow():
             model_name="SD2",
         )
 
-        # # self.logger.info(f"TURN DREAMBOOTH ON")
-        # self.logger.info(f"Turn TEXTUAL INVERSION ON")
-        # self.stable_diffusion.load_textual_inversion(self.path_to_ti)
-
-        # self.sd_generating_image(
-        #     self.stable_diffusion,
-        #     image, mask,
-        #     iter_number, guidance_scale,
-        #     w_orig, h_orig,  
-        #     model_name="SD2_ti-inp",
-        # )
-
-        # self.logger.info(f"Turn TEXTUAL INVERSION OFF")
-        # self.stable_diffusion.unload_textual_inversion()
-
         self.logger.info("DONE GENERATING IMAGES")
         self.logger.info("AVERAGE TIME FOR MODELS:")
-        self.logger.info("Stable Diffusion: "+str(self.sd_avg_time/len(self.prompts)))
-        # self.logger.info("Kandinsky: "+str(self.kandinsky_avg_time/len(self.prompts)))
-        return self.kandinsky_image, self.stable_diffusion_image
+        self.logger.info("Pipe: "+str(self.sd_avg_time/len(self.prompts)))
+        return self.augmented_image
 
     def save_img(self, img, prompt):
         im = Image.fromarray(img)

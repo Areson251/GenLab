@@ -11,6 +11,7 @@ wandb/
 model_output/
 models/
 datasets/
+scripts/PowerPaint/
 
 custom_datasets/INSTSnowRoadDetection
 augmented_dataset*

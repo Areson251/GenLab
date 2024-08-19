@@ -4,7 +4,23 @@ Support Stable Diffusion v1.5 and v2, Stable Diffusion XL, Kandinsky 2.2 and 3
 ## Installation
 python verison is 3.12
 ```
+python -m venv venv
+source venv/bin/activate
 pip install -r requirements.txt
+```
+
+### Using Docker
+```
+cd docker
+./build.sh
+./start.sh
+./into.sh
+```
+
+### Load PowerPaint
+```
+cd scripts
+git clone https://github.com/open-mmlab/PowerPaint.git
 ```
 
 ## Training
