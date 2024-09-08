@@ -28,7 +28,7 @@ class GradioWindow():
         self.path_to_output_imgs = None
         self.path_to_prompts = None
         self.path_to_negative_prompts = None
-        self.path_to_logs = None
+        self.path_to_logs = "out.log"
         self.path_to_ti = None
         self.path_to_db = None
 
@@ -40,14 +40,30 @@ class GradioWindow():
 
         #TODO: rewrite time calculating to something goodx
         self.avg_time = 0
-
         self.folders = []
 
+        self.default_setup = {
+            "path_to_orig_imgs": "images/left_label/left",
+            "path_to_output_imgs": "images/output_imgs/K3",
+            "path_to_prompts": "prompts/pothole.txt",
+            "path_to_negative_prompts": "images/negative_prompts.txt",
+            "path_to_ti": "model_output/SD2inp_ti_cat-avocado/checkpoint-6000",
+            "path_to_db": "model_output/db_pothole",
+        }
+
+        self.start_logging()
+        self.setup( self.default_setup["path_to_orig_imgs"], 
+                    self.default_setup["path_to_output_imgs"], 
+                    self.default_setup["path_to_prompts"], 
+                    self.default_setup["path_to_negative_prompts"], 
+                    self.default_setup["path_to_ti"], 
+                    self.default_setup["path_to_db"],
+                    )
         self.main()
 
     def start_logging(self):
         self.logger = logging.getLogger(__name__)
-        path = os.path.join(self.path_to_output_imgs, self.path_to_logs)
+        path = os.path.join(self.path_to_logs)
         logging.basicConfig(filename=path, level=logging.INFO)
         self.logger.info("Started")
 
@@ -61,11 +77,19 @@ class GradioWindow():
             self.prompts = [line.rstrip() for line in file]
             self.logger.info("Use prompts from "+self.path_to_prompts)
 
-    def load_models(self):
-        self.pipe = PipeLine(textual_inversion_checkpoint=self.path_to_ti, 
-                                                    dreambooth_checkpoint=self.path_to_db)
-        self.logger.info("Models loaded")
-        print("Models loaded!")
+    def load_model(self, selected_model):
+        self.logger.info(f"Loading {selected_model}")
+        print(f"Loading {selected_model}")
+        pipeline, weights = self.model_base[selected_model]
+        self.pipe = globals()[pipeline](pretrained=weights)
+        self.logger.info("Model loaded")
+        print("Model loaded!")
+
+    def delete_model(self):
+        del self.pipe
+        self.pipe = None
+        self.logger.info("Model deleted")
+        print("Model deleted!")
 
     def main(self):
         with gr.Blocks() as self.demo:
@@ -75,13 +99,12 @@ class GradioWindow():
                     label="Input",
                 )
                 with gr.Column():
-                    self.orig_imgs = gr.Textbox(label="Images path", value="images/left_label/left")
-                    self.output_imgs = gr.Textbox(label="Output path", value="images/output_imgs/K3")
-                    self.prompts = gr.Textbox(label="Prompt path", value="prompts/pothole.txt")
-                    self.negative_prompts = gr.Textbox(label="Negative prompt path", value="images/negative_prompts.txt")
-                    self.logs = gr.Textbox(label="Logs file name", value="out.log")
-                    self.ti = gr.Textbox(label="Textual inversion path", value="model_output/SD2inp_ti_cat-avocado/checkpoint-6000")
-                    self.db = gr.Textbox(label="DreamBooth path", value="model_output/db_pothole")
+                    self.orig_imgs = gr.Textbox(label="Images path", value=self.default_setup["path_to_orig_imgs"])
+                    self.output_imgs = gr.Textbox(label="Output path", value=self.default_setup["path_to_output_imgs"])
+                    self.prompt_box = gr.Textbox(label="Prompt path", value=self.default_setup["path_to_prompts"])
+                    self.negative_prompts = gr.Textbox(label="Negative prompt path", value=self.default_setup["path_to_negative_prompts"])
+                    self.ti = gr.Textbox(label="Textual inversion path", value=self.default_setup["path_to_ti"])
+                    self.db = gr.Textbox(label="DreamBooth path", value=self.default_setup["path_to_db"])
                     self.setup_settings = gr.Button("Set up")
 
             with gr.Row():
@@ -91,12 +114,13 @@ class GradioWindow():
 
             with gr.Row():
                  with gr.Column():
+                    self.select_model = gr.Dropdown(label="Select model", 
+                                                    choices=self.model_base.keys())
                     self.iter_number = gr.Number(value=20, label="Steps")
                     self.guidance_scale = gr.Number(value=0.7, label="Guidance Scale")
                  with gr.Column():
-                    self.select_model = gr.Dropdown(label="Select model", 
-                                                    choices=self.model_base.keys())
-                    self.button_load_models = gr.Button("Load models") 
+                    self.button_load_model = gr.Button("Load model") 
+                    self.button_delete_model = gr.Button("Delete model") 
                     self.button_enter_prompt = gr.Button("Enter prompt")     
 
             with gr.Row():
@@ -108,9 +132,8 @@ class GradioWindow():
                 inputs=[
                     self.orig_imgs,
                     self.output_imgs,
-                    self.prompts,
+                    self.prompt_box,
                     self.negative_prompts,
-                    self.logs,
                     self.ti,
                     self.db,
                 ],
@@ -122,8 +145,13 @@ class GradioWindow():
                 inputs=self.input_img,
             )
 
-            self.button_load_models.click(
-                self.load_models,
+            self.button_load_model.click(
+                self.load_model,
+                inputs=[self.select_model]
+            )
+
+            self.button_delete_model.click(
+                self.delete_model,
             )
 
             # TODO: rewrite to cycle for each model
@@ -136,22 +164,19 @@ class GradioWindow():
      # Define the logic
     def setup(self, path_to_orig_imgs, path_to_output_imgs, 
               path_to_prompts, path_to_negative_prompts, 
-              path_to_logs, path_to_ti, path_to_db):
+              path_to_ti, path_to_db):
         
         print("START SETUP")
         self.path_to_orig_imgs = path_to_orig_imgs
         self.path_to_output_imgs = path_to_output_imgs
         self.path_to_prompts = path_to_prompts
         self.path_to_negative_prompts = path_to_negative_prompts
-        self.path_to_logs = path_to_logs
         self.path_to_ti = path_to_ti
         self.path_to_db = path_to_db
-        
 
         self.folders = [self.path_to_orig_imgs, self.path_to_output_imgs]
 
         self.check_folders()
-        self.start_logging()
         self.read_prompts()
 
         print("START DONE")

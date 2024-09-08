@@ -55,7 +55,6 @@ class AugmentDataset():
 
         self.init_annotation()
 
-
     def init_annotation(self):
         self.annotation =  {
             "info": {
@@ -136,7 +135,8 @@ class AugmentDataset():
 
     def get_valid_coordinates(self, background_mask, object_height, object_width, depth_map):
         background_mask = np.array(background_mask)
-        background_object = np.where(background_mask == 255)
+        # background_object = np.where(background_mask == 255)
+        background_object = np.where(background_mask == 3)
         background_object_coords = list(zip(background_object[1], background_object[0]))
 
         valid_coordinates = []
@@ -278,6 +278,8 @@ class AugmentDataset():
             image = Image.open(image_pth)
             background_mask = Image.open(background_masks_paths[idx])
 
+            uniq = np.unique(np.array(background_mask))
+
             self.logger.info(f"Load image: {image_pth}")
             self.logger.info(f"Load background mask: {background_masks_paths[idx]}")
 
@@ -291,6 +293,7 @@ class AugmentDataset():
             target_mask, object_width, object_height, cropped_object = self.load_mask(random_mask_path)
 
             depth_map = self.get_depth_map(image)
+            # depth_map = None
             valid_coordinates, background_object_coords = self.get_valid_coordinates(background_mask, object_height, object_width, depth_map)
 
             # Randomly select one of the valid coordinates

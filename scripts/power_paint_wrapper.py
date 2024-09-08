@@ -8,10 +8,10 @@ from typing import Dict
 from PIL import Image
 import sys
 
-from .PowerPaint.powerpaint.models import BrushNetModel
-from .PowerPaint.powerpaint.models import UNet2DConditionModel
-from .PowerPaint.powerpaint.pipelines import StableDiffusionPowerPaintBrushNetPipeline
-from .PowerPaint.powerpaint.utils import TokenizerWrapper, add_tokens
+from .PowerPaint.models import BrushNetModel
+from .PowerPaint.models import UNet2DConditionModel
+from .PowerPaint.pipelines import StableDiffusionPowerPaintBrushNetPipeline
+from .PowerPaint.utils import TokenizerWrapper, add_tokens
 
 class PowerPaintModel:
     def __init__(self, 
@@ -180,4 +180,16 @@ class PowerPaintModel:
         
         return result
     
-    
+    def diffusion_inpaint(self, image, mask, prompt, negative_prompt, w_orig, h_orig, 
+                    iter_number, guidance_scale):
+        inp = {
+            "image": image,
+            "mask": mask,
+        }
+        generated_image = self.__call__(input_image=inp,
+                                            prompt=prompt,
+                                            fitting_degree=1.0,
+                                            ddim_steps=iter_number,
+                                            seed=1,
+                                            scale=guidance_scale)
+        return generated_image

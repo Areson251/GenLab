@@ -4,11 +4,12 @@ __pycache__
 
 diff_depth/
 diff/
-images/output_imgs/exp3
-images/output_imgs/exp4
-images/left_label
+images/
+images/
+images/
 wandb/
 model_output/
+model_tuning/
 models/
 datasets/
 scripts/PowerPaint/
@@ -16,6 +17,4 @@ scripts/PowerPaint/
 custom_datasets/INSTSnowRoadDetection
 augmented_dataset*
 
-*.png
-# *.jpg
 *.log

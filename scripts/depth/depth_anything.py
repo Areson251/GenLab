@@ -11,18 +11,13 @@ from os.path import isfile, join
 from tqdm import tqdm
 import time
 
+IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
 
-images_dir = "images/output_imgs/exp6"
-images_paths = [join(images_dir, f) for f in os.listdir(images_dir) if join(images_dir, f).endswith(".png")]
+images_dir = "custom_datasets/pothole_far"
+images_paths = [join(images_dir, f) for f in os.listdir(images_dir) if join(images_dir, f).endswith(IMAGE_EXTENSIONS)]
+assert len(images_paths) != 0
 
-# images_paths = [
-#     "images/output_imgs/exp2/KAND_log.png",
-#     "images/output_imgs/exp2/SDXL_log.png",
-#     "images/output_imgs/exp3/SD2_log.png",
-#     "images/output_imgs/exp4/SD1-5_log.png",
-# ]
-
-output_path = "images/output_imgs/exp6_depth"
+output_path = "images/output_imgs/pothole_far_depth"
 if not os.path.exists(output_path):
     os.makedirs(output_path)
 
