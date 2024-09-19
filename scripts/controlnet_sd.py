@@ -18,6 +18,7 @@ class AugmentationPipe():
     def __init__(self, dimension="depth"):
         self.generator = torch.manual_seed(0)
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("DEVICE IS ", self.device)
 
         self.controlnet = ControlNetModel.from_pretrained(
         MODELS[dimension], 
