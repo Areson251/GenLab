@@ -13,6 +13,9 @@ model_tuning/
 models/
 datasets/
 scripts/PowerPaint/
+results/
+depth_exps/
+normals_exps/
 
 custom_datasets/INSTSnowRoadDetection
 augmented_dataset*
