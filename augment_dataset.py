@@ -3,7 +3,7 @@ import logging
 import os
 import time
 import random
-import pycocotools.coco
+from pycocotools.coco import COCO
 import pycocotools.mask
 import pycocotools.mask as mask_utils
 import torch
@@ -20,28 +20,36 @@ from os.path import join
 from PIL import Image, ImageDraw, ImageOps
 from transformers import pipeline
 
-from scripts.sd_inpaint_dreambooth import StableDiffusionModel
+from scripts.sd_inpaint_dreambooth import StableDiffusionModel as DreamBoothPipe
+from scripts.stable_diffusion import StableDiffusionModel as SDPipe
 
 class AugmentDataset():
     def __init__(self, args) -> None:
-        self.prompts = args.prompts_path
-        self.dataset_path = args.dataset_path
-        self.output_path = args.output_path
-        self.dreambooth_checkpoint = args.dreambooth_chkpt
-        self.masks_path = args.masks_path
-        self.padding = args.padding
-        self.iter_number = args.iter_number
-        self.guidance_scale = args.guidance_scale
+        self.args = args
+
+        self.prompts = None
+        self.images_path = None
+        self.annotation_path = None
+        self.output_path = None
+        self.model_checkpoint = None
+        self.masks_path = None
+        self.padding = None
+        self.iter_number = None
+        self.guidance_scale = None
+        self.lora_chkpt = None
 
         self.diffusion_pipe = None
         self.depth_pipe = None
         self.annotation = None
+        self.reference_annotation = None
         self.logger = None
         self.epsilon = 0.5
 
-        self.setup()
+        self.setup()        
 
     def setup(self):
+        self.parse_args(self.args)
+
         self.make_dirs(self.output_path)
         self.make_dirs(f"{self.output_path}/images")
         # self.make_dirs(f"{self.output_path}/masks")
@@ -50,10 +58,36 @@ class AugmentDataset():
         path = os.path.join(self.output_path, "log.log")
         logging.basicConfig(filename=path, level=logging.INFO)
 
-        self.load_pipes(self.dreambooth_checkpoint)
-        self.load_prompts(self.prompts)
+        self.load_pipes()
+        self.load_prompts()
 
         self.init_annotation()
+
+    def parse_args(self, args):
+        self.prompts = args.prompts_path
+        self.images_path = args.images_path
+        self.annotation_path = args.annotation_path
+        self.output_path = args.output_path
+        self.masks_path = args.masks_path
+        self.padding = args.padding
+        self.iter_number = args.iter_number
+        self.guidance_scale = args.guidance_scale
+        self.lora_chkpt = args.lora_chkpt
+
+        if args.sd_chkpt:
+            self.model_checkpoint = args.sd_chkpt
+            self.pipe = SDPipe
+
+        elif args.dreambooth_chkpt:
+            self.model_checkpoint = args.dreambooth_chkpt
+            self.pipe = DreamBoothPipe
+
+        else:
+            raise ValueError("Neither --sd_chkpt nor --dreambooth_chkpt were provided.")
+
+    def make_dirs(self, path):
+        if not os.path.exists(path):
+            os.makedirs(path)
 
     def init_annotation(self):
         self.annotation =  {
@@ -94,9 +128,12 @@ class AugmentDataset():
 
         return mask, object_width, object_height, cropped_object
 
-    def load_pipes(self, dreambooth_checkpoint):
-        self.diffusion_pipe = StableDiffusionModel(dreambooth_checkpoint=dreambooth_checkpoint)
-        self.logger.info("Load SD pipeline")
+    def load_pipes(self):
+        self.diffusion_pipe = self.pipe(model_checkpoint=self.model_checkpoint)
+        self.logger.info(f"Load pipeline: {self.pipe.__name__}")
+
+        if self.lora_chkpt:
+            self.diffusion_pipe.load_lora(self.lora_chkpt)
 
         self.depth_pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-small-hf")
         self.logger.info("Load DEPTH pipeline")
@@ -107,9 +144,22 @@ class AugmentDataset():
 
         self.logger.info("Load prompts"+prompts_path)
 
-    def make_dirs(self, path):
-        if not os.path.exists(path):
-            os.makedirs(path)
+    def load_annotation(self):
+        images_paths = sorted(os.listdir(self.images_path))
+
+        if self.annotation_path.endswith('.json'):
+            self.reference_annotation = COCO(self.annotation_path)
+            background_masks_paths = self.reference_annotation['annotation']
+        elif self.annotation_path.is_dir():
+            background_masks_paths = sorted(os.listdir(self.annotation_path))
+
+        return images_paths, background_masks_paths
+
+    def get_annotation(self):
+        image = Image.open(image_pth)
+        background_mask = Image.open(background_masks_paths[idx])
+
+        return image, background_mask
 
     def get_masked_object(self, image):
         image_array = np.array(image)
@@ -267,18 +317,14 @@ class AugmentDataset():
 
         start_total_time = time.time()
 
-        images_paths = sorted([join(self.dataset_path, "images", f) for f in os.listdir(self.dataset_path+"/images")])
-        background_masks_paths = sorted([join(self.dataset_path, "masks", f) for f in os.listdir(self.dataset_path+"/masks")])
+        images_paths, background_masks_paths = self.load_annotation()
         target_masks = sorted([join(self.masks_path, f) for f in os.listdir(self.masks_path)])
 
         for idx, image_pth in tqdm(enumerate(images_paths)):
             start_time = time.time()
 
             # load image and its background mask 
-            image = Image.open(image_pth)
-            background_mask = Image.open(background_masks_paths[idx])
-
-            uniq = np.unique(np.array(background_mask))
+            image, background_mask = self.get_annotation()
 
             self.logger.info(f"Load image: {image_pth}")
             self.logger.info(f"Load background mask: {background_masks_paths[idx]}")
@@ -370,14 +416,17 @@ class AugmentDataset():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--dataset_path", type=str, required=True)
+    parser.add_argument("--images_path", type=str, required=True)
+    parser.add_argument("--annotation_path", type=str, required=True)
     parser.add_argument("--prompts_path", type=str, required=True)
     parser.add_argument("--masks_path", type=str, required=True)
     parser.add_argument("--output_path", type=str, required=True)
-    parser.add_argument("--dreambooth_chkpt", type=str, required=True)
-    parser.add_argument("--padding", type=int, required=False, default="0")
-    parser.add_argument("--iter_number", type=int, required=False, default="20")
-    parser.add_argument("--guidance_scale", type=float, required=False, default="0.7")
+    parser.add_argument("--sd_chkpt", type=str)
+    parser.add_argument("--dreambooth_chkpt", type=str)
+    parser.add_argument("--lora_chkpt", type=str)
+    parser.add_argument("--padding", type=int, default="0")
+    parser.add_argument("--iter_number", type=int, default="20")
+    parser.add_argument("--guidance_scale", type=float, default="0.7")
     args = parser.parse_args()
     
     dataset_augmentator = AugmentDataset(args)

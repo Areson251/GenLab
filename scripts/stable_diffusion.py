@@ -15,14 +15,6 @@ class StableDiffusionModel():
         self.device = torch.device("cuda")
         print("DEVICE FOR SD: ", self.device)
 
-       # dreambooth
-        # unet = UNet2DConditionModel.from_pretrained(self.pretrained+"/unet")
-        # # if you have trained with `--args.train_text_encoder` make sure to also load the text encoder
-        # text_encoder = CLIPTextModel.from_pretrained(self.pretrained+"/text_encoder")
-       
-        # unet = UNet2DConditionModel.from_pretrained(self.pretrained)
-        # text_encoder = CLIPTextModel.from_pretrained(self.pretrained)
-
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(
             pretrained_model_name_or_path=self.pretrained,
             # unet=unet, 
@@ -31,9 +23,12 @@ class StableDiffusionModel():
             safety_checker=None,
             variant='fp16',
             torch_dtype=torch.float32,
-        # )
         ).to(self.device)
         self.pipe.scheduler = DDIMScheduler.from_config(self.pipe.scheduler.config)
+
+    def load_lora(self, lora_checkpoint):
+        self.pipe.load_lora_weights(lora_checkpoint, weight_name="pytorch_lora_weights.safetensors")
+        print(f"Loaded lora weights from {lora_checkpoint}")
 
     def load_textual_inversion(self, textual_inversion_checkpoint):
         self.textual_inversion_checkpoint = textual_inversion_checkpoint
@@ -43,7 +38,7 @@ class StableDiffusionModel():
         self.textual_inversion_checkpoint = None
         self.pipe.unload_textual_inversion()
 
-    def diffusion_inpaint(self, image, mask, 
+    def __call__(self, image, mask, 
                           positive_prompt, negative_prompt, 
                           w_orig, h_orig, 
                           iter_number, guidance_scale):
@@ -64,5 +59,3 @@ class StableDiffusionModel():
         inpaint_image = inpaint_image.resize((w_orig, h_orig))
         return np.array(inpaint_image)
     
-
-# stable_diffusion = StableDiffusionModel()

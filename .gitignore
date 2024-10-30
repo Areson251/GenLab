@@ -11,11 +11,16 @@ wandb/
 model_output/
 model_tuning/
 models/
+models
+models_pp/
 datasets/
 scripts/PowerPaint/
 results/
 depth_exps/
 normals_exps/
+custom_datasets/pothole_0
+custom_datasets/pothole_0.json
+tuning_exps/
 
 custom_datasets/INSTSnowRoadDetection
 augmented_dataset*

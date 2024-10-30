@@ -33,13 +33,17 @@ from PIL import Image, ImageDraw
 
 import diffusers
 from diffusers import AutoencoderKL, DDPMScheduler, DiffusionPipeline, StableDiffusionPipeline, UNet2DConditionModel
-from diffusers import StableDiffusionInpaintPipeline as Pipeline
 from diffusers.optimization import get_scheduler
 from diffusers.training_utils import cast_training_params, compute_snr
 from diffusers.utils import check_min_version, convert_state_dict_to_diffusers, is_wandb_available
 from diffusers.utils.hub_utils import load_or_create_model_card, populate_model_card
 from diffusers.utils.import_utils import is_xformers_available
 from diffusers.utils.torch_utils import is_compiled_module
+
+sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/')
+from scripts.power_paint_accelerate_entity import infer, parse_task_params
+from scripts.PowerPaint.pipelines.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
+from scripts.utils.utils import TokenizerWrapper, add_tokens
 
 
 if is_wandb_available():
@@ -308,13 +312,26 @@ class CustomDataset(Dataset):
         return example
 
 
-def prepare_pipe(model_name):
+def prepare_pipe():
     torch.set_grad_enabled(True)
     global weight_dtype
     weight_dtype = torch.float16
 
-    pipe = Pipeline.from_pretrained(model_name, torch_dtype=weight_dtype)
-    
+    pipe = Pipeline.from_pretrained("runwayml/stable-diffusion-inpainting", torch_dtype=weight_dtype)
+    pipe.tokenizer = TokenizerWrapper(
+        from_pretrained="runwayml/stable-diffusion-v1-5", subfolder="tokenizer", revision=None
+    )
+
+    # add_tokens(
+    #     tokenizer=pipe.tokenizer,
+    #     text_encoder=pipe.text_encoder,
+    #     placeholder_tokens=["P_ctxt", "P_shape", "P_obj"],
+    #     initialize_tokens=["a", "a", "a"],
+    #     num_vectors_per_token=10,
+    # )
+
+    # load_model(pipe.unet, "./models/unet/unet.safetensors")
+    # load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors", strict=False)
     return pipe
 
 
@@ -676,7 +693,7 @@ def main():
         return model
     
     # prepare pipe for PowerPaint
-    pipe = prepare_pipe(args.pretrained_model_name_or_path)
+    pipe = prepare_pipe()
 
     # Load scheduler, tokenizer and models.
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model_name_or_path, subfolder="scheduler")
@@ -924,7 +941,6 @@ def main():
         disable=not accelerator.is_local_main_process,
     )
 
-    # Train!
     for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
         train_loss = 0.0

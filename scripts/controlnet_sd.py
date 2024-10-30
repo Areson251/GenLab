@@ -14,6 +14,8 @@ MODELS = {
     "normals": "fusing/stable-diffusion-v1-5-controlnet-normal",
 }
 
+PROMPT_WATER = " High resolution and realism, vivid colors, bright, high contrast"
+
 class AugmentationPipe():
     def __init__(self, dimension="depth"):
         self.generator = torch.manual_seed(0)
@@ -65,6 +67,7 @@ if __name__ == "__main__":
     if not os.path.exists(augmentation_path):
         os.makedirs(augmentation_path)
 
+    estimator = Estimator()
     augmentation = AugmentationPipe()
     
     with open(args.prompts_path, "r") as f:
@@ -73,12 +76,12 @@ if __name__ == "__main__":
     
     for idx, image_name in enumerate(tqdm.tqdm(images_paths)):
         image = Image.open(os.path.join(args.images_folder, image_name))
-        estimator_ouput = Estimator.estimate(image, args.dimension)
+        estimator_ouput = estimator.estimate(image, args.dimension)
 
         image_name = image_name.split(".")[0] + ".png"
         estimator_ouput.save(os.path.join(dimension_path, image_name))
 
-        prompt = prompts[idx].split("\n")[0]
+        prompt = prompts[idx].split("\n")[0] + PROMPT_WATER
         ouput = augmentation(prompt, estimator_ouput, 
                              args.num_steps,
                             args.guidance_scale,

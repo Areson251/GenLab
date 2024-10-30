@@ -3,7 +3,7 @@ This script use COCO annotation format. *--instance_data_dir* is folder with you
 
 To run training use folowing sommand:
 ```
-accelerate launch scripts/lora-inpainting/train_inpainting_lora.py \
+accelerate launch scripts/lora-inpainting/train_inpainting_lora_pp.py \
   --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
   --instance_data_dir=<DATASET FOLDER> \
   --annotation_path=<COCO ANNOTATION> \
@@ -21,22 +21,24 @@ accelerate launch scripts/lora-inpainting/train_inpainting_lora.py \
   --report_to="wandb" \
   --seed=1337
 ```
+Example:
 ```
-accelerate launch --main_process_port=12547 scripts/lora/train_inpainting_lora.py \
-  --pretrained_model_name_or_path="runwayml/stable-diffusion-v1-5" \
-  --instance_data_dir="datasets/original/COCO2014/images/train" \
-  --annotation_path="datasets/original/COCO2014/annotations/instances_train2014.json" \
+accelerate launch --main_process_port=12549 scripts/lora/train_inpainting_lora.py \
+  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting" \
+  --instance_data_dir="datasets/original/pothole_full/images" \
+  --annotation_path="datasets/original/pothole_full/pothole_full.json" \
   --dataloader_num_workers=1 \
   --resolution=512 \
   --train_batch_size=4 \
-  --gradient_accumulation_steps=4 \  16 или 32
+  --gradient_accumulation_steps=8 \
+  --output_dir="model_output/lora_pothole-full2_sd2" \
   --max_train_steps=15000 \
-  --learning_rate=1e-04 \   поменьше лр сделать
+  --learning_rate=1e-06 \
   --max_grad_norm=1 \
   --lr_scheduler="cosine" \
   --lr_warmup_steps=0 \
-  --output_dir="model_output/lora_COCO_sd15" \
   --checkpointing_steps=2000 \
+  --report_to="wandb" \
   --seed=1337
 ```
 

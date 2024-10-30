@@ -15,7 +15,7 @@ class ImageMerger():
     def merge_row(self):
         widths, heights = zip(*(i.size for i in self.images))
         min_height = min(heights)
-        self.images, widths, heights = self.resize_images(min_height, widths, heights)
+        self.images, widths, heights = self.resize_images("height", min_height, widths, heights)
 
         total_width = sum(widths)
         max_height = max(heights)
@@ -31,6 +31,8 @@ class ImageMerger():
     
     def merge_column(self):
         widths, heights = zip(*(i.size for i in self.images))
+        min_width = min(widths)
+        self.images, widths, heights = self.resize_images("width", min_width, widths, heights)
 
         total_height = sum(heights)
         max_width = max(widths)
@@ -41,12 +43,12 @@ class ImageMerger():
             y_offset += image.size[1]
         return new_image
     
-    def resize_images(self, min_height, widths, heights):
+    def resize_images(self, side_by, min_side, widths, heights):
         new_images = []
         new_widths = []
         new_heights = []
         for image, width, height in zip(self.images, widths, heights):
-            resize_koef = min_height / height
+            resize_koef = min_side / locals()[side_by]
             new_widths.append(int(width * resize_koef))
             new_heights.append(int(height * resize_koef))
             new_images.append(image.resize((int(width * resize_koef), 
@@ -76,13 +78,15 @@ if __name__ == "__main__":
             merger.add_image(image) 
 
         print("merge images")
-        merged_rows.append(merger.merge_row()) 
+        merged_rows.append(merger.merge_column()) 
+        # merged_rows.append(merger.merge_row()) 
 
     merger.clear_images()
     for image in merged_rows:
         merger.add_image(image)
 
-    merged_image = merger.merge_column()
+    merged_image = merger.merge_row()
+    # merged_image = merger.merge_column()
     if not args.output_path.lower().endswith(IMAGE_EXTENSIONS):
         args.output_path += ".png"
     merged_image.save(args.output_path)

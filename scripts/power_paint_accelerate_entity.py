@@ -14,10 +14,10 @@ from transformers import DPTFeatureExtractor, DPTForDepthEstimation
 from pycocotools import mask as mask_utils
 from diffusers.pipelines.controlnet.pipeline_controlnet import ControlNetModel
 
-sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/scripts/')
-from PowerPaint.powerpaint.pipelines.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
-from PowerPaint.powerpaint.pipelines.pipeline_PowerPaint_ControlNet import StableDiffusionControlNetInpaintPipeline as controlnetPipeline
-from utils.utils import TokenizerWrapper, add_tokens
+sys.path.insert(0, '/home/docker_diffdepth/diff_depth_new/')
+from scripts.PowerPaint.pipelines.pipeline_PowerPaint import StableDiffusionInpaintPipeline as Pipeline
+from scripts.PowerPaint.pipelines.pipeline_PowerPaint_ControlNet import StableDiffusionControlNetInpaintPipeline as controlnetPipeline
+from scripts.utils.utils import TokenizerWrapper, add_tokens
 
 
 NEGATIVE_PROMPT = "text, bad anatomy, bad proportions, blurry, cropped, deformed, disfigured, "\
@@ -28,7 +28,7 @@ PROMPT_WATER = "Imagine you are a object replacer. Your task is generating a rep
                 "scene. It's important that the new object is not the same as the existing one. The existing object. You must give me an object which could be "\
                 f"depicted instead of existing object. So, existing object: " 
                
-ALLOWDED_IMGS_IDS = ['919', '979', '986', '2022', '2225', '2243', '2249', '2264', '2492']
+# ALLOWDED_IMGS_IDS = ['919', '979', '986', '2022', '2225', '2243', '2249', '2264', '2492']
 
 def set_seed(seed):
     torch.manual_seed(seed)
@@ -205,7 +205,7 @@ def predict(
         negative_promptA=negative_promptA,
         negative_promptB=negative_promptB,
         image=input_image["image"].convert("RGB"),
-        mask_image=input_image["mask"].convert("RGB"),
+        mask=input_image["mask"].convert("RGB"),
         width=H,
         height=W,
         guidance_scale=scale,
@@ -433,7 +433,7 @@ def get_cropped(image, mask_info, mask):
     padding = int(min(h, w) * 0.05)
     left_top_x, left_top_y = max(0, bbox[0] - padding), max(0, bbox[1] - padding)
     right_bottom_x, right_bottom_y = min(w, left_top_x + bbox[2] + 2*padding), min(h, left_top_y + bbox[3] + 2*padding)
-    new_W, new_H = right_bottom_x - left_top_x, right_bottom_y - left_top_y
+    new_W, new_H = int(right_bottom_x - left_top_x), int(right_bottom_y - left_top_y)
     new_image = image.crop((left_top_x, left_top_y, right_bottom_x, right_bottom_y))
     new_mask = Image.fromarray(mask.astype(bool)).crop((left_top_x, left_top_y, right_bottom_x, right_bottom_y))
 
@@ -476,7 +476,7 @@ def get_image(path, metainfo, image_id, dilate=True, crop=True):
     image = Image.open(path + '/' + metainfo[image_id]['file_name'])
     image_info = metainfo[image_id]
 
-    height, width = image_info['height'], image_info['width']
+    name, height, width = image_info["file_name"], image_info['height'], image_info['width']
 
     preprocessed_image, masks, masks_infos = preprocess_image(image, image_info, height, width)
     dilate_kernel = int(min(preprocessed_image.size) * 0.03)
@@ -490,6 +490,7 @@ def get_image(path, metainfo, image_id, dilate=True, crop=True):
     tasks = []
     new_objects = []
     crops = []
+    names = []
 
     for mask_, mask_info_ in zip(masks, masks_infos):
         mask = mask_.copy()
@@ -505,6 +506,7 @@ def get_image(path, metainfo, image_id, dilate=True, crop=True):
         bbox = mask_info['bbox']
         mask_w, mask_h = bbox[2], bbox[3]
         is_crop = crop and mask_h / mask_w < 2 and mask_w / mask_h < 2
+        # is_crop = True
         if is_crop:
             image, mask, left_top, shape = get_cropped(preprocessed_image, mask_info, mask)
         else:
@@ -521,6 +523,7 @@ def get_image(path, metainfo, image_id, dilate=True, crop=True):
         tasks.append(mask_info['task'])
         new_objects.append(new_object)
         crops.append(is_crop if not is_crop else (left_top, shape))
+        names.append(name)
 
     return {
         "image": images,
@@ -530,19 +533,20 @@ def get_image(path, metainfo, image_id, dilate=True, crop=True):
         "id": objects_ids,
         "task": tasks,
         "new_object": new_objects,
-        "crop": crops
+        "crop": crops,
+        "file_name": names
     }
 
 
-def parse_task_params(image):
+def parse_task_params(image, scale):
     text_guided_prompt = ""
     text_guided_negative_prompt = NEGATIVE_PROMPT
     shape_guided_prompt = ""
     shape_guided_negative_prompt = NEGATIVE_PROMPT
     fitting_degree = 1
     ddim_steps = 50
-    scale = 2
-    seed = random.randint(0, 1 << 32)
+    scale = scale
+    seed = 0
     task = image["task"]
     enable_control = True
     input_control_image = None
@@ -556,9 +560,10 @@ def parse_task_params(image):
     removal_negative_prompt = NEGATIVE_PROMPT
 
     if image["task"] == "text-guided":
-        text_guided_prompt = PROMPT_WATER + image["new_object"]
-        # text_guided_prompt = image["new_object"]
-        scale = 5
+        # text_guided_prompt = PROMPT_WATER + image["new_object"]
+        # print("PROMPT: ", text_guided_prompt)
+        text_guided_prompt = image["new_object"]
+        # scale = 5
         control_type = "depth"
     elif image["task"] == "shape-guided":
         shape_guided_prompt = image["new_object"]
@@ -591,16 +596,6 @@ def parse_task_params(image):
     )
 
 
-def prepare_pipe():
-    weight_dtype = torch.float16
-
-    pipe = Pipeline.from_pretrained("runwayml/stable-diffusion-inpainting", torch_dtype=weight_dtype)
-
-    load_model(pipe.unet, "./models/unet/unet.safetensors")
-    load_model(pipe.text_encoder, "./models/unet/text_encoder.safetensors")
-    return pipe
-
-
 def main(args):
 
     with open(args.json_path, 'r') as jsonFile:
@@ -609,7 +604,7 @@ def main(args):
     print("Total images: ", len(file_idxs))
 
     if not os.path.exists(args.output_path):
-        os.mkdir(args.output_path)
+        os.makedirs(args.output_path)
 
     accelerator = Accelerator()
 
@@ -642,20 +637,21 @@ def main(args):
     print(accelerator.device)
     with accelerator.split_between_processes(file_idxs) as chunked_files:
         for file_id in chunked_files:
-            try:
-                if file_id not in ALLOWDED_IMGS_IDS:
-                    print(f"skip {file_id} image")
-                    continue
+            # try:
+                # if file_id not in ALLOWDED_IMGS_IDS:
+                    # print(f"skip {file_id} image")
+                    # continue
 
                 image = get_image(args.images_path, metainfo, file_id)
 
+                # path = os.path.join(args.output_path)
                 path = os.path.join(args.output_path, file_id)
                 if not os.path.exists(path):
                     os.mkdir(path)
 
                 image["source_image"].save(path + '/' + 'source.png')
-                for image_, mask_, obj_, obj_id_, task_, new_obj_, crop_ in zip(
-                    image["image"], image["mask"], image["object"], image["id"], image["task"], image["new_object"], image["crop"]
+                for image_, mask_, obj_, obj_id_, task_, new_obj_, crop_, name_ in zip(
+                    image["image"], image["mask"], image["object"], image["id"], image["task"], image["new_object"], image["crop"], image["file_name"],
                 ):
                     image_one = {
                         "image": image_,
@@ -665,13 +661,14 @@ def main(args):
                         "id": obj_id_,
                         "task": task_,
                         "new_object": new_obj_,
-                        "crop": crop_
+                        "crop": crop_,
+                        "name":  name_ 
                     }
 
                     inpaint_result, gallery = infer(
                         pipe,
                         image_one,
-                        *parse_task_params(image_one)
+                        *parse_task_params(image_one, args.guidance_scale)
                     )
 
                     source = image_one['source_image'].copy()
@@ -683,6 +680,10 @@ def main(args):
                     image_one['image'].save(orig_path)
                     inpaint_result[1].save(fake_path)
                     image_one['mask'].save(mask_path)
+
+                    # orig = np.array(image_one['image'])
+                    # fake = np.array(inpaint_result[1])
+                    # mask = np.array(image_one['mask'])
 
                     orig = cv2.imread(orig_path)
                     orig = cv2.cvtColor(orig, cv2.COLOR_BGR2RGB)
@@ -700,20 +701,28 @@ def main(args):
                     )
 
                     if image_one['crop']:
+                        print("crop")
                         result = Image.fromarray(np.uint8(result)).resize(image_one['crop'][1])
                         result.save(path + '/' + f"{str(image_one['id'])}_res.png")
                         source.paste(result, image_one['crop'][0])
                         result = source
                     else:
+                        print("not")
                         result = Image.fromarray(np.uint8(result))
                         result.save(path + '/' + f"{str(image_one['id'])}_res.png")
 
-                    result.save(path + '/' + f"{str(image_one['id'])}.png")
+                    result.save(path + '/' + f"{str(image_one['name'])}.png")
+
+                    new_path = args.output_path.split("/")[-1]
+                    new_path = "tuning_exps/"+"pp_boxes/"+new_path
+                    if not os.path.exists(new_path):
+                        os.makedirs(new_path)
+                    result.save(new_path + '/' + f"{str(image_one['name'])}")
 
                     break
-            except Exception as e:
-                print(f"{file_id} has errors!")
-                print(e)
+            # except Exception as e:
+            #     print(f"{file_id} has errors!")
+            #     print(e)
 
 
 if __name__ == "__main__":
@@ -722,6 +731,7 @@ if __name__ == "__main__":
     parser.add_argument("--json_path", type=str, required=True)
     parser.add_argument("--output_path", type=str, required=True)
     parser.add_argument("--lora_weights", type=str, default=None)
+    parser.add_argument("--guidance_scale", type=float, default=2)
     args = parser.parse_args()
     
     main(args)

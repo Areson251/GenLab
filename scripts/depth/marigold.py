@@ -34,7 +34,10 @@ class Estimator:
             
         output = cls.pipe(image)    
         visualisation_name = f"visualize_{cls.model_type}"
-        vis = getattr(cls.pipe.image_processor, visualisation_name)(output.prediction)[0]
+        if dimension == "depth":
+            vis = getattr(cls.pipe.image_processor, visualisation_name)(output.prediction, color_map="binary")[0]
+        else:  # assuming 'normals' is the other dimension
+            vis = getattr(cls.pipe.image_processor, visualisation_name)(output.prediction)[0]
         return vis
     
 
