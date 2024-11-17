@@ -12,6 +12,8 @@ from tqdm import tqdm
 import time
 import argparse
 
+from metrics import Metrics
+
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
 MODELS = {
@@ -25,7 +27,10 @@ class DepthEstimator():
         self.output_path = output_path
         self.model = model
         
-    def depth_estimation(self):
+    def depth_estimation(self, count_metrics=False):
+        if count_metrics:
+                metrics = Metrics()
+
         images_paths = [join(self.images_dir, f) for f in os.listdir(self.images_dir) if join(self.images_dir, f).endswith(IMAGE_EXTENSIONS)]
         assert len(images_paths) != 0
 
@@ -51,10 +56,22 @@ class DepthEstimator():
             depth = (depth - depth.min()) / (depth.max() - depth.min()) * 255.0
                     
             depth = depth.astype(np.uint8)
-            depth = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)
-            cv2.imwrite(join(self.output_path, filename + "_depth.png"), depth)
+            depth_color = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)
+            cv2.imwrite(join(self.output_path, filename + "_depth.png"), depth_color)
+
+            if count_metrics:
+                gt_path = join('/'.join(self.images_dir.split("/")[:-1]),
+                               "depth", 
+                               filename+".png")
+                gt = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE)
+                metrics.RMSE_transit(depth, gt)
+                metrics.AbsRel_transit(depth, gt)
 
         print("AVERAGE TIME IS: ", avg_time/len(images_paths))
+
+        if count_metrics:
+            print("RMSE: ", metrics.RMSE_total())
+            print("AbsRel: ", metrics.AbsRel_total())
 
 
 if __name__ == "__main__":
@@ -62,7 +79,8 @@ if __name__ == "__main__":
     parser.add_argument("--images_dir", type=str, required=True)
     parser.add_argument("--output_path", type=str, required=True)
     parser.add_argument("--model", type=str, required=True, choices=MODELS.keys())
+    parser.add_argument("--calc_metrics", type=bool, default=False)
     args = parser.parse_args()
 
     estimator = DepthEstimator(args.images_dir, args.output_path, MODELS[args.model])
-    estimator.depth_estimation()
+    estimator.depth_estimation(count_metrics=args.calc_metrics)

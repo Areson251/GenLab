@@ -5,6 +5,8 @@ from PIL import Image
 import tqdm
 import numpy as np
 
+from metrics import Metrics
+
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
 MODELS = {
     "depth": "prs-eth/marigold-depth-lcm-v1-0",
