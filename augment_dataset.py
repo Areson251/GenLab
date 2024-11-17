@@ -4,13 +4,13 @@ import os
 import time
 import random
 from pycocotools.coco import COCO
-import pycocotools.mask
 import pycocotools.mask as mask_utils
 import torch
 import cv2
 import json
 import pycocotools
 import numpy as np
+from pathlib import Path
 import matplotlib.pyplot as plt
 
 from itertools import groupby
@@ -27,7 +27,7 @@ class AugmentDataset():
     def __init__(self, args) -> None:
         self.args = args
 
-        self.prompts = None
+        self.prompts_path = None
         self.images_path = None
         self.annotation_path = None
         self.output_path = None
@@ -42,20 +42,22 @@ class AugmentDataset():
         self.depth_pipe = None
         self.annotation = None
         self.reference_annotation = None
+        self.prompts = None
         self.logger = None
         self.epsilon = 0.5
 
         self.setup()        
 
     def setup(self):
+        self.set_seed(self.args.seed)
         self.parse_args(self.args)
 
         self.make_dirs(self.output_path)
-        self.make_dirs(f"{self.output_path}/images")
-        # self.make_dirs(f"{self.output_path}/masks")
+        # self.make_dirs(f"{self.output_path}/images")
 
         self.logger = logging.getLogger(__name__)
-        path = os.path.join(self.output_path, "log.log")
+        path = os.path.join("log.log")
+        # path = os.path.join(self.output_path, "log.log")
         logging.basicConfig(filename=path, level=logging.INFO)
 
         self.load_pipes()
@@ -63,8 +65,16 @@ class AugmentDataset():
 
         self.init_annotation()
 
+    def set_seed(self, seed):
+        seed = int(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.cuda.manual_seed_all(seed)
+        np.random.seed(seed)
+        random.seed(seed)
+
     def parse_args(self, args):
-        self.prompts = args.prompts_path
+        self.prompts_path = args.prompts_path
         self.images_path = args.images_path
         self.annotation_path = args.annotation_path
         self.output_path = args.output_path
@@ -129,7 +139,7 @@ class AugmentDataset():
         return mask, object_width, object_height, cropped_object
 
     def load_pipes(self):
-        self.diffusion_pipe = self.pipe(model_checkpoint=self.model_checkpoint)
+        self.diffusion_pipe = self.pipe(pretrained=self.model_checkpoint)
         self.logger.info(f"Load pipeline: {self.pipe.__name__}")
 
         if self.lora_chkpt:
@@ -138,27 +148,56 @@ class AugmentDataset():
         self.depth_pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-small-hf")
         self.logger.info("Load DEPTH pipeline")
 
-    def load_prompts(self, prompts_path):
-        with open(prompts_path, "r") as file:
+    def load_prompts(self):
+        with open(self.prompts_path, "r") as file:
             self.prompts = [line.rstrip() for line in file]
 
-        self.logger.info("Load prompts"+prompts_path)
+        self.logger.info("Load prompts"+self.prompts_path)
 
     def load_annotation(self):
-        images_paths = sorted(os.listdir(self.images_path))
+        if isinstance(self.annotation_path, str):
+            self.annotation_path = Path(self.annotation_path)
+        
+        images_paths = sorted([os.path.join(self.images_path, f) for f in 
+                               os.listdir(self.images_path)])
 
-        if self.annotation_path.endswith('.json'):
+        # if self.annotation_path.endswith('.json'):
+        if self.annotation_path.suffix == '.json':
             self.reference_annotation = COCO(self.annotation_path)
-            background_masks_paths = self.reference_annotation['annotation']
+            background_masks_paths = self.reference_annotation.dataset['annotations']
+
         elif self.annotation_path.is_dir():
-            background_masks_paths = sorted(os.listdir(self.annotation_path))
+            background_masks_paths = sorted([os.path.join(self.annotation_path, f) for f 
+                                             in os.listdir(self.annotation_path)])
 
         return images_paths, background_masks_paths
 
-    def get_annotation(self):
+    def get_annotation(self, image_pth, mask_path):
         image = Image.open(image_pth)
-        background_mask = Image.open(background_masks_paths[idx])
+        self.logger.info(f"Load image: {image_pth}")
 
+        if isinstance(mask_path, dict):
+            img_name = image_pth.split('/')[-1]
+            img_id = next((img['id'] for img in self.reference_annotation.dataset["images"] 
+                if img['file_name'] == img_name), None)
+            # works only for one annotation per image
+            mask_ids = self.reference_annotation.getAnnIds(imgIds=[img_id])
+            mask_annot = self.reference_annotation.loadAnns(ids=mask_ids)[0]
+            rle = mask_utils.frPyObjects(mask_annot["segmentation"], 
+                                         mask_annot["segmentation"]["size"][0], 
+                                         mask_annot["segmentation"]["size"][1])
+            background_mask = mask_utils.decode(rle)*255
+            background_mask = Image.fromarray(background_mask)
+            self.logger.info(f"Load background mask {mask_annot['id']}")
+
+        if isinstance(mask_path, str):
+            background_mask = Image.open(mask_path)
+            self.logger.info(f"Load background mask: {mask_path}")
+
+            filename_img = self.get_filename_without_ext(image_pth)
+            filename_background_mask = self.get_filename_without_ext(mask_path)
+            assert filename_img.split(".")[0] == filename_background_mask.split(".")[0]
+        
         return image, background_mask
 
     def get_masked_object(self, image):
@@ -185,8 +224,7 @@ class AugmentDataset():
 
     def get_valid_coordinates(self, background_mask, object_height, object_width, depth_map):
         background_mask = np.array(background_mask)
-        # background_object = np.where(background_mask == 255)
-        background_object = np.where(background_mask == 3)
+        background_object = np.where(background_mask == 255)
         background_object_coords = list(zip(background_object[1], background_object[0]))
 
         valid_coordinates = []
@@ -252,7 +290,8 @@ class AugmentDataset():
                        random_x, random_y, 
                        box, prompt):
 
-        category_id = [v for v in self.annotation["categories"] if v["name"] == prompt][0]["id"]
+        category_id = 1
+        # category_id = [v for v in self.annotation["categories"] if v["name"] == prompt][0]["id"]
         mask_image = Image.new("L", (image.size[0], image.size[1]), 0)
         mask_image.paste(cropped_resized_object, (random_x, random_y))
                 
@@ -314,6 +353,7 @@ class AugmentDataset():
         self.logger.info("Start generating")
         avg_total_time = 0
         avg_generation_time = 0
+        img_id = 1
 
         start_total_time = time.time()
 
@@ -322,16 +362,10 @@ class AugmentDataset():
 
         for idx, image_pth in tqdm(enumerate(images_paths)):
             start_time = time.time()
+            filename_img = "".join(image_pth.split('/')[-1].split('.')[:-1])
 
             # load image and its background mask 
-            image, background_mask = self.get_annotation()
-
-            self.logger.info(f"Load image: {image_pth}")
-            self.logger.info(f"Load background mask: {background_masks_paths[idx]}")
-
-            filename_img = self.get_filename_without_ext(image_pth)
-            filename_background_mask = self.get_filename_without_ext(background_masks_paths[idx])
-            assert filename_img.split(".")[0] == filename_background_mask.split(".")[0]
+            image, background_mask = self.get_annotation(image_pth, background_masks_paths[idx])
 
             # get random pseudo mask (NOW USE ONLY ONE MASK)
             random_mask_path = random.choice(target_masks)
@@ -372,11 +406,15 @@ class AugmentDataset():
             # inpainting
             for i, prompt in enumerate(self.prompts):
                 start_generating_time = time.time()
-                generated_image = self.diffusion_pipe.diffusion_inpaint(
+                generated_image = self.diffusion_pipe(
                     cropped_image, cropped_resized_object, 
                     prompt, None, image.size[0], image.size[1],
                     self.iter_number, self.guidance_scale
                 )
+
+                # debug
+                generated_image.save(f"{self.output_path}/generated_image.png")
+
                 generation_time = time.time() - start_generating_time
                 avg_generation_time += generation_time
                 
@@ -392,20 +430,19 @@ class AugmentDataset():
                 augmented_mask.paste(cropped_resized_object, (random_x, random_y))  
 
                 new_image_name = f"{filename_img}_{i}.jpg"
-                augmented_image.save(f"{self.output_path}/images/"+new_image_name)
+                augmented_image.save(f"{self.output_path}/"+new_image_name)
+                # augmented_image.save(f"{self.output_path}/images/"+new_image_name)
 
                 self.add_image_info(new_image_name, augmented_image)
 
                 img_id = len(self.annotation["images"])
                 self.add_annotation(img_id, image, cropped_resized_object, 
                                     random_x, random_y, 
-                                    box, prompt)
+                                    box, "pothole")
+                                    # box, prompt)
 
             avg_total_time += time.time() - start_time
             self.logger.info(f"Average generation time: {avg_generation_time/(idx+1)}")
-
-            if idx == 2:
-                break
 
         with open(f"{self.output_path}/annotation.json", 'w') as fp:
             (json.dump(self.annotation, fp))
@@ -427,6 +464,7 @@ if __name__ == "__main__":
     parser.add_argument("--padding", type=int, default="0")
     parser.add_argument("--iter_number", type=int, default="20")
     parser.add_argument("--guidance_scale", type=float, default="0.7")
+    parser.add_argument("--seed", type=float, default="0")
     args = parser.parse_args()
     
     dataset_augmentator = AugmentDataset(args)

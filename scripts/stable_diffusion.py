@@ -53,9 +53,9 @@ class StableDiffusionModel():
             strength=1.0
         ).images
 
-        print("GENERATED IMAGE COUNT: ", len(inpaint_images))
         inpaint_image = inpaint_images[0]
 
-        inpaint_image = inpaint_image.resize((w_orig, h_orig))
-        return np.array(inpaint_image)
+        # inpaint_image = inpaint_image.resize((w_orig, h_orig))
+        # return np.array(inpaint_image)
+        return inpaint_image
     
