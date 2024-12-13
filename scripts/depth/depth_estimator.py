@@ -19,13 +19,15 @@ IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
 MODELS = {
     "Depth_Anything": "LiheYoung/depth-anything-small-hf",
     "Depth_Anything_v2": "depth-anything/Depth-Anything-V2-Small-hf",
+    "Intel": "Intel/dpt-large",
 }
 
 class DepthEstimator():
-    def __init__(self, images_dir, output_path, model):
+    def __init__(self, images_dir, output_path, model, device="cuda"):
         self.images_dir = images_dir
         self.output_path = output_path
-        self.model = model
+        self.model_name = model
+        self.device = device
         
     def depth_estimation(self, count_metrics=False):
         if count_metrics:
@@ -34,10 +36,11 @@ class DepthEstimator():
         images_paths = [join(self.images_dir, f) for f in os.listdir(self.images_dir) if join(self.images_dir, f).endswith(IMAGE_EXTENSIONS)]
         assert len(images_paths) != 0
 
-        if not os.path.exists(self.output_path):
-            os.makedirs(self.output_path)
+        if self.output_path:
+            if not os.path.exists(self.output_path):
+                os.makedirs(self.output_path)
 
-        pipe = pipeline(task="depth-estimation", model=self.model)
+        pipe = pipeline(task="depth-estimation", model=self.model_name, device=self.device)
         avg_time = 0
         for img_path in tqdm(images_paths):
             filename = img_path.split("/")[-1].split(".")[0]
@@ -57,16 +60,20 @@ class DepthEstimator():
                     
             depth = depth.astype(np.uint8)
             depth_color = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)
-            cv2.imwrite(join(self.output_path, filename + "_depth.png"), depth_color)
+            if self.output_path:
+                cv2.imwrite(join(self.output_path, filename + "_depth.png"), depth_color)
 
             if count_metrics:
+                gt_file_name = "depth"+filename.split("left")[-1]
                 gt_path = join('/'.join(self.images_dir.split("/")[:-1]),
                                "depth", 
-                               filename+".png")
+                               gt_file_name+".png")
                 gt = cv2.imread(gt_path, cv2.IMREAD_GRAYSCALE)
+
                 metrics.RMSE_transit(depth, gt)
                 metrics.AbsRel_transit(depth, gt)
 
+        print(f"MODEL NAME: {self.model_name}")
         print("AVERAGE TIME IS: ", avg_time/len(images_paths))
 
         if count_metrics:
@@ -77,10 +84,11 @@ class DepthEstimator():
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--images_dir", type=str, required=True)
-    parser.add_argument("--output_path", type=str, required=True)
+    parser.add_argument("--output_path", type=str)
     parser.add_argument("--model", type=str, required=True, choices=MODELS.keys())
     parser.add_argument("--calc_metrics", type=bool, default=False)
+    parser.add_argument("--device", type=str, default="cuda")
     args = parser.parse_args()
 
-    estimator = DepthEstimator(args.images_dir, args.output_path, MODELS[args.model])
+    estimator = DepthEstimator(args.images_dir, args.output_path, MODELS[args.model], args.device)
     estimator.depth_estimation(count_metrics=args.calc_metrics)

@@ -14,10 +14,15 @@ class Metrics():
         return np.mean(self.rmse_list) ** 0.5
     
     def AbsRel_transit(self, depth, gt):
-        self.absrel_list.append((torch.abs(depth - gt) / gt))
+        safe_gt = np.where(gt == 0, np.nan, gt)
+        self.absrel_list.append(abs(depth - gt) / safe_gt)
     
     def AbsRel_total(self):
-        return np.mean(self.absrel_list)
+        all_values = np.concatenate(self.absrel_list)  
+        valid_values = all_values[~np.isnan(all_values)]  
+        if valid_values.size == 0:
+            return 0  
+        return np.mean(valid_values)
 
 
 if __name__ == "__main__":
