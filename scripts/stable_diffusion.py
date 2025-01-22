@@ -7,12 +7,13 @@ from transformers import CLIPTextModel
 
 class StableDiffusionModel():
     def __init__(self, 
-                 pretrained="stabilityai/stable-diffusion-2-inpainting") -> None:
+                 pretrained="stabilityai/stable-diffusion-2-inpainting", device="cuda") -> None:
         
         self.pretrained = pretrained
         self.textual_inversion_checkpoint = None
 
-        self.device = torch.device("cuda")
+        self.device = torch.device(device)
+        # self.device = torch.device("cuda")
         print("DEVICE FOR SD: ", self.device)
 
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(

@@ -8,69 +8,49 @@
 
 # echo "CONVERT ANNOTATIONS"
 
-python augment_dataset.py \
-            --images_path="otchet/imgs" \
-            --annotation_path="otchet/anns" \
-            --masks_path="custom_datasets/target_masks" \
-            --prompts_path="prompts/pothole.txt" \
-            --output_path="tuning_exps/test" \
-            --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-            --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-2000" \
-            --padding=20 \
-            --guidance_scale=0.7 \
-            --seed=0
-
-# declare -a gs_arr=(0.7 2 5 7 10 13 15)
-# for gs in "${gs_arr[@]}"; do 
-#     for ((ckpt_iter=2000; ckpt_iter<=14000; ckpt_iter+=2000)); do 
-#         python augment_dataset.py \
-#             --images_path="custom_datasets/scenes/pothole_scenes" \
-#             --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
+# python augment_dataset.py \
+#             --images_path="datasets/original/INSTSnowRoadDetection/test" \
+#             --annotation_path="datasets/original/INSTSnowRoadDetection/annotation_test.json" \
 #             --masks_path="custom_datasets/target_masks" \
 #             --prompts_path="prompts/pothole.txt" \
-#             --output_path="tuning_exps/sd2_masks/full-${ckpt_iter}-${gs}" \
+#             --output_path="tuning_exps/INSTSnowRoadDetection_augmented" \
 #             --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-#             --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-${ckpt_iter}" \
+#             --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-6000" \
 #             --padding=20 \
-#             --guidance_scale=${gs}
-#     done
+#             --guidance_scale=3 \
+#             --seed=0 
 
-#     python augment_dataset.py \
-#         --images_path="custom_datasets/scenes/pothole_scenes" \
-#         --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
-#         --masks_path="custom_datasets/target_masks" \
-#         --prompts_path="prompts/pothole.txt" \
-#         --output_path="tuning_exps/sd2_masks/full-${gs}" \
-#         --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-#         --lora_chkpt="model_output/lora_pothole-full2_sd2" \
-#         --padding=20 \
-#         --guidance_scale=${gs}
-# done
+declare -a gs_arr=(0.7 1 2 3)
+for gs in "${gs_arr[@]}"; do 
+    echo "START GS ${gs} GENERATION"
+    python augment_dataset.py \
+            --images_path="datasets/original/INSTSnowRoadDetection/test" \
+            --annotation_path="datasets/original/INSTSnowRoadDetection/annotation_test.json" \
+            --masks_path="custom_datasets/target_masks" \
+            --prompts_path="prompts/pothole.txt" \
+            --output_path="tuning_exps/sd2_boxes/INSTSnowRoadDetection.augmented_gs-${gs}_ckpt-6" \
+            --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+            --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-6000" \
+            --padding=20 \
+            --guidance_scale=${gs} \
+            --seed=0 
+    done
+echo "IMAGES GENERATED"
 
-# echo "IMAGES GENERATED"
+declare -a gs_arr=(0.7 1 2 3)
+for gs in "${gs_arr[@]}"; do 
+    python3 scripts/utils/merge_images.py \
+        --output_path="results/sd2_boxes/synth_pothole_sd2_${gs}.png" \
+        --images_folders \
+        "custom_datasets/scenes/pothole_scenes" \
+        "tuning_exps/sd2_masks/full-2000-${gs}/" \
+        "tuning_exps/sd2_masks/full-4000-${gs}/" \
+        "tuning_exps/sd2_masks/full-6000-${gs}/" \
+        "tuning_exps/sd2_masks/full-8000-${gs}/" \
+        "tuning_exps/sd2_masks/full-10000-${gs}/" \
+        "tuning_exps/sd2_masks/full-12000-${gs}/" \
+        "tuning_exps/sd2_masks/full-14000-${gs}/" \
+        "tuning_exps/sd2_masks/full-${gs}/"
+done
+echo "DONE RESULT IMAGE"
 
-# declare -a gs_arr=(0.7 2 5 7 10 13 15)
-# for gs in "${gs_arr[@]}"; do 
-#     python3 scripts/utils/merge_images.py \
-#         --output_path="results/sd2_masks/pothole_full_sd2_${gs}.png" \
-#         --images_folders \
-#         "custom_datasets/scenes/pothole_scenes" \
-#         "tuning_exps/sd2_masks/full-2000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-4000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-6000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-8000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-10000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-12000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-14000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-${gs}/"
-# done
-
-# echo "DONE RESULT IMAGE"
-
-# gs=2
-# accelerate launch --main_process_port=12360  --num_processes=1 scripts/power_paint_accelerate_entity.py \
-#         --images_path="custom_datasets/scenes/pothole_scenes" \
-#         --json_path="custom_datasets/scenes/pothole_scenes_edit.json" \
-#         --output_path="datasets/augmented/lora_pp_pothole_full/pothole_scenes_edit/full-2000-${gs}" \
-#         --lora_chkpt="model_output/lora_pothole-full_pp/checkpoint-2000/pytorch_lora_chkpt.safetensors" \
-#         --guidance_scale=${gs}

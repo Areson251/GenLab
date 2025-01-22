@@ -8,7 +8,7 @@ import cv2
 import time
 from os.path import join
 
-from metrics import Metrics
+from scripts.depth.metrics import Metrics
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
 MODELS = {

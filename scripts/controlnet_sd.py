@@ -3,9 +3,11 @@ import argparse
 from PIL import Image
 import tqdm
 import torch
+import numpy as np
 from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, UniPCMultistepScheduler
 
-from depth.marigold import Estimator
+# from depth.marigold import Estimator
+from scripts.depth.marigold import Estimator
 
 
 IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp', '.tiff', '.webp')
@@ -17,10 +19,11 @@ MODELS = {
 PROMPT_WATER = " High resolution and realism, vivid colors, bright, high contrast"
 
 class AugmentationPipe():
-    def __init__(self, dimension="depth"):
-        self.generator = torch.manual_seed(0)
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        print("DEVICE IS ", self.device)
+    def __init__(self, dimension="depth", device="cuda", seed=0):
+        self.generator = torch.manual_seed(seed)
+        self.device = torch.device(device)
+        # self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        print("CONTROLNET DEVICE IS ", self.device)
 
         self.controlnet = ControlNetModel.from_pretrained(
         MODELS[dimension], 
@@ -35,11 +38,11 @@ class AugmentationPipe():
         self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config)
     
     # CONTROL_CONDITIONING_SCALE
-    def __call__(self, prompt, image, num_inference_steps=20,
+    def __call__(self, prompt, estimator_ouput, num_inference_steps=20,
                  guidance_scale=7.5,
                  controlnet_conditioning_scale=1.0,):
-
-        return self.pipe(prompt, image, 
+        
+        return self.pipe(prompt, estimator_ouput, 
                          num_inference_steps=num_inference_steps,
                          guidance_scale=guidance_scale,
                          controlnet_conditioning_scale=controlnet_conditioning_scale,).images[0]
@@ -67,13 +70,15 @@ if __name__ == "__main__":
     if not os.path.exists(augmentation_path):
         os.makedirs(augmentation_path)
 
-    estimator = Estimator()
+    estimator = Estimator(args.dimension)
     augmentation = AugmentationPipe()
     
     with open(args.prompts_path, "r") as f:
-        prompts = f.readlines()
+        prompt = f.read()
     images_paths = sorted([f for f in os.listdir(args.images_folder) if f.lower().endswith(IMAGE_EXTENSIONS)])
     
+    prompt += PROMPT_WATER
+
     for idx, image_name in enumerate(tqdm.tqdm(images_paths)):
         image = Image.open(os.path.join(args.images_folder, image_name))
         estimator_ouput = estimator.estimate(image, args.dimension)
@@ -81,7 +86,7 @@ if __name__ == "__main__":
         image_name = image_name.split(".")[0] + ".png"
         estimator_ouput.save(os.path.join(dimension_path, image_name))
 
-        prompt = prompts[idx].split("\n")[0] + PROMPT_WATER
+        # prompt = prompts[idx].split("\n")[0] + PROMPT_WATER
         ouput = augmentation(prompt, estimator_ouput, 
                              args.num_steps,
                             args.guidance_scale,
