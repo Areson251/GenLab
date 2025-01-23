@@ -622,6 +622,14 @@ def parse_args():
         help="A folder containing the training data of instance images.",
     )
 
+    parser.add_argument(
+        "--loss",
+        type=str,
+        default='MSE',
+        choices=["MSE", "CUSTOM"],
+        help="The name of loss function. Default is MSE, but you can use custom loss",
+    )
+
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
@@ -701,11 +709,16 @@ def main():
     text_encoder = pipe.text_encoder
     vae = pipe.vae
     unet = pipe.unet
+
     
     # freeze parameters of models to save more memory
     unet.requires_grad_(False)
     vae.requires_grad_(False)
     text_encoder.requires_grad_(False)
+
+
+    if args.loss == "CUSTOM":
+        unet_remover = unet.copy()
 
 
     # For mixed precision training we cast all non-trainable weights (vae, non-lora text_encoder and non-lora unet) to half-precision
@@ -732,11 +745,22 @@ def main():
     vae.to(accelerator.device, dtype=weight_dtype)
     text_encoder.to(accelerator.device, dtype=weight_dtype)
 
+    if args.loss == "CUSTOM":
+        unet_remover.to(accelerator.device, dtype=weight_dtype)
+
     # Add adapter and make sure the trainable params are in float32.
     unet.add_adapter(unet_lora_config)
     if args.mixed_precision == "fp16":
         # only upcast trainable parameters (LoRA) into fp32
         cast_training_params(unet, dtype=torch.float32)
+
+
+    if args.loss == "CUSTOM":
+        unet_remover.add_adapter(unet_lora_config)
+        if args.mixed_precision == "fp16":
+            # only upcast trainable parameters (LoRA) into fp32
+            cast_training_params(unet_remover, dtype=torch.float32)
+        
 
     if args.enable_xformers_memory_efficient_attention:
         if is_xformers_available():
@@ -748,6 +772,10 @@ def main():
                     "xFormers 0.0.16 cannot be used for training in some GPUs. If you observe problems during training, please update xFormers to at least 0.0.17. See https://huggingface.co/docs/diffusers/main/en/optimization/xformers for more details."
                 )
             unet.enable_xformers_memory_efficient_attention()
+    
+            if args.loss == "CUSTOM":
+                unet_remover.enable_xformers_memory_efficient_attention()
+
         else:
             raise ValueError("xformers is not available. Make sure it is installed correctly")
 
@@ -755,6 +783,10 @@ def main():
 
     if args.gradient_checkpointing:
         unet.enable_gradient_checkpointing()
+
+        if args.loss == "CUSTOM":
+            unet_remover.enable_gradient_checkpointing()
+
 
     # Enable TF32 for faster training on Ampere GPUs,
     # cf https://pytorch.org/docs/stable/notes/cuda.html#tensorfloat-32-tf32-on-ampere-devices
@@ -903,6 +935,7 @@ def main():
     logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
     logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
     logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    logger.info(f"  Loss = {args.loss}")
     global_step = 0
     first_epoch = 0
 
@@ -943,6 +976,10 @@ def main():
 
     for epoch in range(first_epoch, args.num_train_epochs):
         unet.train()
+
+        if args.loss == "CUSTOM":
+            unet_remover.train()
+
         train_loss = 0.0
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(unet):
