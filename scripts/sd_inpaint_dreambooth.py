@@ -9,13 +9,15 @@ class StableDiffusionModel():
     def __init__(self, 
                  pretrained="stabilityai/stable-diffusion-2-inpainting", 
                  textual_inversion_checkpoint="model_output/exp1/checkpoint-1000",
-                 dreambooth_checkpoint="model_output/db_pothole") -> None:
+                 dreambooth_checkpoint="model_output/db_pothole",
+                 device="cuda") -> None:
         
         self.pretrained = pretrained
         self.textual_inversion_checkpoint = textual_inversion_checkpoint
         self.dreambooth_checkpoint = dreambooth_checkpoint
 
-        self.device = torch.device("cuda")
+        self.device = torch.device(device)
+        # self.device = torch.device("cuda")
         print("DEVICE FOR SD_DB: ", self.device)
 
         unet = UNet2DConditionModel.from_pretrained(self.dreambooth_checkpoint+"/unet")

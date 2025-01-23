@@ -22,6 +22,9 @@ from transformers import pipeline
 
 from scripts.sd_inpaint_dreambooth import StableDiffusionModel as DreamBoothPipe
 from scripts.stable_diffusion import StableDiffusionModel as SDPipe
+from scripts.depth.depth_estimator import DepthEstimator, DEPTH_MODELS 
+from scripts.controlnet_sd import AugmentationPipe as ControlNetPipe
+
 
 class AugmentDataset():
     def __init__(self, args) -> None:
@@ -49,8 +52,8 @@ class AugmentDataset():
         self.setup()        
 
     def setup(self):
-        self.set_seed(self.args.seed)
         self.parse_args(self.args)
+        self.set_seed()
 
         self.make_dirs(self.output_path)
         # self.make_dirs(f"{self.output_path}/images")
@@ -65,8 +68,8 @@ class AugmentDataset():
 
         self.init_annotation()
 
-    def set_seed(self, seed):
-        seed = int(seed)
+    def set_seed(self, ):
+        seed = int(self.seed)
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         torch.cuda.manual_seed_all(seed)
@@ -83,6 +86,10 @@ class AugmentDataset():
         self.iter_number = args.iter_number
         self.guidance_scale = args.guidance_scale
         self.lora_chkpt = args.lora_chkpt
+        self.device = args.device
+        self.seed = args.seed
+        self.depth_model = args.depth_model
+        self.synth_scenes = args.synth_scenes
 
         if args.sd_chkpt:
             self.model_checkpoint = args.sd_chkpt
@@ -139,14 +146,26 @@ class AugmentDataset():
         return mask, object_width, object_height, cropped_object
 
     def load_pipes(self):
-        self.diffusion_pipe = self.pipe(pretrained=self.model_checkpoint)
+        self.diffusion_pipe = self.pipe(pretrained=self.model_checkpoint, device=self.device)
         self.logger.info(f"Load pipeline: {self.pipe.__name__}")
 
         if self.lora_chkpt:
             self.diffusion_pipe.load_lora(self.lora_chkpt)
 
-        self.depth_pipe = pipeline(task="depth-estimation", model="LiheYoung/depth-anything-small-hf")
+        args = argparse.Namespace(
+            model=self.depth_model,
+            calc_metrics=False,
+            device=self.device,
+            images_dir=None,
+            output_path=None,
+        )
+
+        self.depth_pipe = DepthEstimator(args)
         self.logger.info("Load DEPTH pipeline")
+
+        if self.synth_scenes:
+            self.scene_generation_pipe = ControlNetPipe(device=self.device, seed=self.seed)
+            self.logger.info("Load ControlNet pipeline")
 
     def load_prompts(self):
         with open(self.prompts_path, "r") as file:
@@ -161,7 +180,6 @@ class AugmentDataset():
         images_paths = sorted([os.path.join(self.images_path, f) for f in 
                                os.listdir(self.images_path)])
 
-        # if self.annotation_path.endswith('.json'):
         if self.annotation_path.suffix == '.json':
             self.reference_annotation = COCO(self.annotation_path)
             background_masks_paths = self.reference_annotation.dataset['annotations']
@@ -183,10 +201,14 @@ class AugmentDataset():
             # works only for one annotation per image
             mask_ids = self.reference_annotation.getAnnIds(imgIds=[img_id])
             mask_annot = self.reference_annotation.loadAnns(ids=mask_ids)[0]
+            img_info = self.reference_annotation.loadImgs(ids=[img_id])[0]
             rle = mask_utils.frPyObjects(mask_annot["segmentation"], 
-                                         mask_annot["segmentation"]["size"][0], 
-                                         mask_annot["segmentation"]["size"][1])
+                                         img_info["width"],
+                                         img_info["height"],)
+                                        #  mask_annot["segmentation"]["size"][0], 
+                                        #  mask_annot["segmentation"]["size"][1])
             background_mask = mask_utils.decode(rle)*255
+            background_mask = np.squeeze(background_mask.astype('uint8'))
             background_mask = Image.fromarray(background_mask)
             self.logger.info(f"Load background mask {mask_annot['id']}")
 
@@ -240,15 +262,6 @@ class AugmentDataset():
 
 
         return valid_coordinates, background_object_coords
-
-    def get_depth_map(self, image):
-        with torch.no_grad():
-            depth = self.depth_pipe(image)["depth"]
-
-        depth = np.asarray(depth)
-        depth = (depth - depth.min()) / (depth.max() - depth.min())
-
-        return depth
 
     def random_rotate(self, mask):
         angle = random.randint(-360, 360)
@@ -308,38 +321,30 @@ class AugmentDataset():
             "iscrowd": int(0)
         })
     
+    def prepare_depth(self, depth):
+        depth = np.asarray(depth)
+        return (depth - depth.min()) / (depth.max() - depth.min()) 
+
     # DEBUG
     def draw_point_and_save(self, mask, random_coordinates, save_path):
-        # Convert the mask to an RGB image
         image = mask.convert('RGB')
-
-        # Create a draw object
         draw = ImageDraw.Draw(image)
 
-        # Calculate the bounding box of the circle
         left = random_coordinates[0] - 5
         top = random_coordinates[1] - 5
         right = random_coordinates[0] + 5
         bottom = random_coordinates[1] + 5
 
-        # Draw a red circle at the random coordinates
         draw.ellipse([(left, top), (right, bottom)], outline='red')
-
-        # Save the image
         image.save(save_path)
 
     def draw_valid_coordinates_and_save(self, mask, valid_coordinates, save_path):
-        # Convert the mask to an RGB image
         image = mask.convert('RGB')
-
-        # Create a draw object
         draw = ImageDraw.Draw(image)
 
-        # Draw a red point at each valid coordinate
         for coord in valid_coordinates:
             draw.point([coord[0], coord[1]], fill='red')
 
-        # Save the image
         image.save(save_path)
 
     def save_depth(self, depth, save_path):
@@ -348,101 +353,134 @@ class AugmentDataset():
         depth = cv2.applyColorMap(depth, cv2.COLORMAP_INFERNO)
         cv2.imwrite(save_path, depth)
 
-    # MAIN FUNCTION
+    # MAIN FUNCTIONS
+    def generate_scene(self, estimator_ouput, 
+                       guidance_scale=3, controlnet_conditioning_scale=0.7):
+        prompt = """A snow-covered residential street in winter, with a thin layer of packed snow on the road. Tire tracks run along the length of the street, and large snowbanks are piled on both sides from plowing. A mix of houses line the street, including a white building with a sloped roof on the left. Trees in the distance include coniferous and leafless deciduous types. The sky is overcast, casting a soft, muted light across the scene. Utility poles with overhead wires follow the street, enhancing the suburban winter atmosphere."""
+        return self.scene_generation_pipe(prompt=prompt, 
+                                        estimator_ouput=estimator_ouput, 
+                                        guidance_scale=guidance_scale, 
+                                        controlnet_conditioning_scale=controlnet_conditioning_scale)
+
+    def generate_object(self, image, background_mask, 
+                        object_height, object_width, 
+                        depth_map, cropped_object, prompt):
+        
+        depth_map = self.prepare_depth(depth_map)
+        valid_coordinates, background_object_coords = self.get_valid_coordinates(background_mask, object_height, object_width, depth_map)
+
+        # Randomly select one of the valid coordinates
+        if valid_coordinates == []:
+            return None, None, None
+
+        random_coordinates = random.choice(valid_coordinates)
+        random_x, random_y, resize_coeff = random_coordinates
+        self.logger.info(f"Random coordinates: {random_coordinates}")
+
+        # self.draw_point_and_save(background_mask, random_coordinates, f"{self.output_path}/{self.filename_img}_background_mask.png")
+        # self.draw_valid_coordinates_and_save(background_mask, valid_coordinates, f"{self.output_path}/{self.filename_img}_valid_coordinates.png")
+        # self.draw_valid_coordinates_and_save(background_mask, background_object_coords, f"{self.output_path}/{self.filename_img}_background_object_coords.png")
+        self.save_depth(depth_map, f"{self.output_path}/{self.filename_img}/depth.png")
+
+        # resize mask due to depth map
+        resized_width = int(object_width * resize_coeff)
+        resized_height = int(object_height * resize_coeff)
+        cropped_resized_object = cropped_object.resize((resized_width, resized_height))
+        
+        # get box with mask (log to file [x, y, w, h])
+        box = [int(random_x), int(random_y), int(resized_width), int(resized_height)]
+        self.logger.info(f"Box: {box}")
+        cropped_image = image.crop((random_x, random_y, random_x+resized_width, random_y+resized_height))
+        
+        # inpainting
+        start_generating_time = time.time()
+        augmented_image = self.diffusion_pipe(
+            cropped_image, cropped_resized_object, 
+            prompt, None, image.size[0], image.size[1],
+            self.iter_number, self.guidance_scale
+        )
+
+        generation_time = time.time() - start_generating_time
+        self.avg_generation_time += generation_time
+
+        # debug
+        augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image.png")
+        
+        self.logger.info(f"Prompt: {prompt}")
+        self.logger.info(f"Generation time: {generation_time}")
+
+        resized_augmented_image = augmented_image.resize((resized_width, resized_height))
+
+        augmented_image = image.copy()
+        augmented_image.paste(resized_augmented_image, (random_x, random_y))
+
+        augmented_mask = background_mask.copy()
+        augmented_mask.paste(cropped_resized_object, (random_x, random_y))  
+
+        return augmented_image, cropped_resized_object, random_x, random_y, box
+    
     def augment_dataset(self):
         self.logger.info("Start generating")
         avg_total_time = 0
-        avg_generation_time = 0
+        self.avg_generation_time = 0
         img_id = 1
 
         start_total_time = time.time()
 
         images_paths, background_masks_paths = self.load_annotation()
-        target_masks = sorted([join(self.masks_path, f) for f in os.listdir(self.masks_path)])
+        self.target_masks = sorted([join(self.masks_path, f) for f in os.listdir(self.masks_path)])
 
         for idx, image_pth in tqdm(enumerate(images_paths)):
             start_time = time.time()
-            filename_img = "".join(image_pth.split('/')[-1].split('.')[:-1])
+            self.filename_img = "".join(image_pth.split('/')[-1].split('.')[:-1])
+
+            self.make_dirs(f"{self.output_path}/{self.filename_img}")
 
             # load image and its background mask 
             image, background_mask = self.get_annotation(image_pth, background_masks_paths[idx])
 
+            depth_map = self.depth_pipe.calculate_depth(image)
+
             # get random pseudo mask (NOW USE ONLY ONE MASK)
-            random_mask_path = random.choice(target_masks)
+            random_mask_path = random.choice(self.target_masks)
             self.logger.info(f"Load random mask: {random_mask_path}")
             target_mask, object_width, object_height, cropped_object = self.load_mask(random_mask_path)
 
-            depth_map = self.get_depth_map(image)
-            # depth_map = None
-            valid_coordinates, background_object_coords = self.get_valid_coordinates(background_mask, object_height, object_width, depth_map)
+            # generate scene 
+            if self.synth_scenes:
+                scene = self.generate_scene(depth_map)
+            else:
+                scene = image 
+            scene.save(f"{self.output_path}/{self.filename_img}/scene.jpg")
 
-            # Randomly select one of the valid coordinates
-            if valid_coordinates == []:
-                image.save(f"{self.output_path}/images/{filename_img}.jpg")
-                self.add_image_info(f"{filename_img}.jpg", image)
-                img_id += 1
-                self.logger.info(f"No valid coordinates found")
-                continue
-
-            random_coordinates = random.choice(valid_coordinates)
-            random_x, random_y, resize_coeff = random_coordinates
-            self.logger.info(f"Random coordinates: {random_coordinates}")
-
-            # self.draw_point_and_save(background_mask, random_coordinates, f"{self.output_path}/{filename_img}_background_mask.png")
-            # self.draw_valid_coordinates_and_save(background_mask, valid_coordinates, f"{self.output_path}/{filename_img}_valid_coordinates.png")
-            # self.draw_valid_coordinates_and_save(background_mask, background_object_coords, f"{self.output_path}/{filename_img}_background_object_coords.png")
-            # self.save_depth(depth_map, f"{self.output_path}/{filename_img}_depth.png")
-
-            # resize mask due to depth map
-            resized_width = int(object_width * resize_coeff)
-            resized_height = int(object_height * resize_coeff)
-            cropped_resized_object = cropped_object.resize((resized_width, resized_height))
-            
-            # get box with mask (log to file [x, y, w, h])
-            box = [int(random_x), int(random_y), int(resized_width), int(resized_height)]
-            self.logger.info(f"Box: {box}")
-            cropped_image = image.crop((random_x, random_y, random_x+resized_width, random_y+resized_height))
-            
-            # inpainting
+            # generate object
             for i, prompt in enumerate(self.prompts):
-                start_generating_time = time.time()
-                generated_image = self.diffusion_pipe(
-                    cropped_image, cropped_resized_object, 
-                    prompt, None, image.size[0], image.size[1],
-                    self.iter_number, self.guidance_scale
-                )
+                augmented_image, cropped_resized_object, \
+                    random_x, random_y, box = self.generate_object(
+                        scene, background_mask, 
+                        object_height, object_width, 
+                        depth_map, cropped_object, prompt)
 
-                # debug
-                generated_image.save(f"{self.output_path}/generated_image.png")
+                if not augmented_image:
+                    self.add_image_info(f"{self.filename_img}.jpg", scene)
+                    img_id += 1
+                    self.logger.info(f"No valid coordinates found")
+                    continue
 
-                generation_time = time.time() - start_generating_time
-                avg_generation_time += generation_time
-                
-                self.logger.info(f"Prompt: {prompt}")
-                self.logger.info(f"Generation time: {generation_time}")
-
-                resized_generated_image = generated_image.resize((resized_width, resized_height))
-
-                augmented_image = image.copy()
-                augmented_image.paste(resized_generated_image, (random_x, random_y))
-
-                augmented_mask = background_mask.copy()
-                augmented_mask.paste(cropped_resized_object, (random_x, random_y))  
-
-                new_image_name = f"{filename_img}_{i}.jpg"
-                augmented_image.save(f"{self.output_path}/"+new_image_name)
+                new_image_name = f"{self.filename_img}_{i}.jpg"
+                augmented_image.save(f"{self.output_path}/{self.filename_img}/"+new_image_name)
                 # augmented_image.save(f"{self.output_path}/images/"+new_image_name)
 
                 self.add_image_info(new_image_name, augmented_image)
 
                 img_id = len(self.annotation["images"])
-                self.add_annotation(img_id, image, cropped_resized_object, 
+                self.add_annotation(img_id, scene, cropped_resized_object, 
                                     random_x, random_y, 
                                     box, "pothole")
                                     # box, prompt)
 
             avg_total_time += time.time() - start_time
-            self.logger.info(f"Average generation time: {avg_generation_time/(idx+1)}")
+            self.logger.info(f"Average generation time: {self.avg_generation_time/(idx+1)}")
 
         with open(f"{self.output_path}/annotation.json", 'w') as fp:
             (json.dump(self.annotation, fp))
@@ -458,13 +496,17 @@ if __name__ == "__main__":
     parser.add_argument("--prompts_path", type=str, required=True)
     parser.add_argument("--masks_path", type=str, required=True)
     parser.add_argument("--output_path", type=str, required=True)
+    parser.add_argument("--depth_model", type=str, choices=DEPTH_MODELS.keys(), default=DEPTH_MODELS["Depth_Anything_v2"])
     parser.add_argument("--sd_chkpt", type=str)
     parser.add_argument("--dreambooth_chkpt", type=str)
     parser.add_argument("--lora_chkpt", type=str)
+    parser.add_argument("--device", type=str, default="cuda")
     parser.add_argument("--padding", type=int, default="0")
     parser.add_argument("--iter_number", type=int, default="20")
     parser.add_argument("--guidance_scale", type=float, default="0.7")
     parser.add_argument("--seed", type=float, default="0")
+    parser.add_argument("--synth_scenes", type=bool, default=True)
+
     args = parser.parse_args()
     
     dataset_augmentator = AugmentDataset(args)

@@ -37,9 +37,21 @@ python augment_dataset.py \
 ```
 
 #### DreamBooth preprocessing
-To prepare dreambooth output for using in script below use folowing sommand:
+To prepare dreambooth output for using in script above use folowing sommand:
 ```
 python scripts/utils/prepare_weights_dreambooth.py \
 --model_path="model_output/db_inp_snowy_pothole_sd2" \
 --ckpt="checkpoint-2000" 
+```
+
+### ControlNet scene generation
+To generate scene by reference image use folowing sommand:
+```
+python scripts/controlnet_sd.py \
+--images_folder="datasets/original/INSTSnowRoadDetection/test" \
+--dimension="depth" \
+--prompts_path="prompts/test.txt" \
+--num_steps=20 \
+--guidance_scale=7.5 \
+--controlnet_conditioning_scale=1.0 
 ```
