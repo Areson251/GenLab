@@ -371,7 +371,7 @@ class AugmentDataset():
 
         # Randomly select one of the valid coordinates
         if valid_coordinates == []:
-            return None, None, None
+            return None, None, None, None, None
 
         random_coordinates = random.choice(valid_coordinates)
         random_x, random_y, resize_coeff = random_coordinates
