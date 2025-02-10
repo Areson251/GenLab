@@ -13,15 +13,18 @@ from pycocotools.coco import COCO
 
 THRESHOLD = 1000
 ALLOWDED_CATEGORIES = {
-    20: 'road',
-    14: 'sidewalk',
-    16: 'bike_lane',
-    15: 'pedestrian_area',
-    10: 'rail_track',
-    11: 'sand',
-    18: 'terrain',
-    19: 'vegetation',
-}
+    8: "bump",
+    15: "curb",
+    17: "rail_track",
+    19: "manhole",
+    7: "pit",
+    6: "puddle",
+    1: "firehose",
+    2: "hose",
+    3: "wire",
+    20: "catch_basin",
+    5: "poop",
+    }
 
 CATS_PRIORITY = {
     'firehose': 1,
@@ -75,15 +78,17 @@ IMG_IDS = [
 ]
 
 class Cleaner():
-    def __init__(self, annotation_pth, new_annotation_pth=None) -> None:
+    def __init__(self, annotation_pth, new_annotation_path=None) -> None:
         self.annotation_pth = annotation_pth
 
         self.annotations_data = None
         self.new_annotations_data = []
+        self.new_cats_data = []
+        self.new_imgs_data = []
         self.coco = None
         self.data = None
         self.threshold = THRESHOLD
-        self.new_annotation_pth = new_annotation_pth
+        self.new_annotation_path = new_annotation_path
 
         self.new_data = {
                 'licenses': [{'name': '', 'id': 0, 'url': ''}], 
@@ -109,6 +114,31 @@ class Cleaner():
         for annotation in tqdm.tqdm(self.annotations_data):
             if annotation['area'] < self.threshold and annotation['category_id'] in ALLOWDED_CATEGORIES:
                 continue
+            self.new_annotations_data.append(annotation)
+        
+        self.set_up_data()
+
+        print('NEW ANNOTATIONS COUNT: ', len(self.new_data['annotations']))
+        self.save_annotations()
+
+        self.data = self.new_data
+        self.new_data = {}
+        self.new_annotations_data = []
+        self.new_cats_data = []
+
+    def extract_certain_cats(self):
+        for annotation in tqdm.tqdm(self.annotations_data):
+            if annotation['category_id'] not in ALLOWDED_CATEGORIES:
+                continue
+            category_info = self.coco.loadCats(ids=[annotation['category_id']])[0]
+            img_info = self.coco.loadImgs(ids=[annotation['image_id']])[0]
+
+            if category_info not in self.new_cats_data:
+                self.new_cats_data.append(category_info)
+
+            if img_info not in self.new_imgs_data:
+                self.new_imgs_data.append(img_info)
+
             self.new_annotations_data.append(annotation)
         
         self.set_up_data()
@@ -196,16 +226,32 @@ class Cleaner():
 
     def fix_ids(self):
         self.second2new_imgs_ids = {}
+        self.second2new_cats_ids = {}
+
+        for idx, cat in enumerate(tqdm.tqdm(self.data['categories'])):
+            cat_id = cat['id']
+            self.second2new_cats_ids[cat_id] = idx + 1
+            self.data['categories'][idx]['id'] = idx + 1
+
+            new_cat = cat.copy()
+            new_cat['id'] = idx + 1
+            self.new_cats_data.append(new_cat)
+
         for idx, img in enumerate(tqdm.tqdm(self.data['images'])):
             img_id = img['id']
             self.second2new_imgs_ids[img_id] = idx + 1
             self.data['images'][idx]['id'] = idx + 1
 
+            new_img = img.copy()
+            new_img['id'] = idx + 1
+            self.new_imgs_data.append(new_img)
+
         for idx, ann in enumerate(tqdm.tqdm(self.data['annotations'])):
-            img_id = ann['image_id']
-            new_img_id = self.second2new_imgs_ids[img_id]
+            new_img_id = self.second2new_imgs_ids[ann['image_id']]
+            new_cat_id = self.second2new_cats_ids[ann['category_id']]
 
             ann['image_id'] = new_img_id
+            ann['category_id'] = new_cat_id
             ann['id'] = idx + 1
 
             self.new_annotations_data.append(ann)
@@ -269,7 +315,7 @@ class Cleaner():
 
                 self.new_data['annotations'].append(new_ann)
 
-        self.new_annotation_pth = self.new_annotation_pth
+        self.new_annotation_path = self.new_annotation_path
         print('NEW ANNOTATIONS COUNT: ', len(self.new_data['annotations']))
         self.save_annotations()
 
@@ -287,9 +333,10 @@ class Cleaner():
             anns = self.coco.loadAnns(ids=anns_ids)
             imgs_ids = set(map(lambda x: x['image_id'] , anns))
 
-            obj_counts[cat_name] = len(anns_ids)
-            imgs_with_obj_counts[cat_name] = len(imgs_ids)
+            obj_counts[(cat_id, cat_name)] = len(anns_ids)
+            imgs_with_obj_counts[(cat_id, cat_name)] = len(imgs_ids)
 
+        print('ANNOTATIONS COUNT: ', len(self.coco.dataset['annotations']))
         print("TOTAL COUNT OF EACH CATEGORY:\n", obj_counts)
         print("COUNT OF IMAGES TO CATEGORY:\n", imgs_with_obj_counts)
         
@@ -422,14 +469,14 @@ class Cleaner():
     def set_up_data(self):
         self.new_data['licenses'] = self.data['licenses']
         self.new_data['info'] = self.data['info']
-        self.new_data['categories'] = self.data['categories']
-        self.new_data['images'] = self.data['images']
+        self.new_data['categories'] = self.new_cats_data
+        self.new_data['images'] = self.new_imgs_data
         self.new_data['annotations'] = self.new_annotations_data
 
     def save_annotations(self):
-        with open(self.new_annotation_pth, 'w') as outfile:
+        with open(self.new_annotation_path, 'w') as outfile:
             json.dump(self.new_data, outfile)
-        print('saved annotation to ', self.new_annotation_pth)
+        print('saved annotation to ', self.new_annotation_path)
 
     def set_default(self):
             self.new_annotations_data = []
@@ -455,7 +502,7 @@ class Cleaner():
 class JoinAnns():
     def __init__(self) -> None:
         self.new_annotations_data = []
-        self.new_annotation_pth = None
+        self.new_annotation_path = None
         self.first_imgs = []
         self.second_imgs = []
 
@@ -468,14 +515,14 @@ class JoinAnns():
             'annotations': []
         }
 
-    def add_annotations(self, first_annotation, second_annotation, new_annotation_pth):
+    def add_annotations(self, first_annotation, second_annotation, new_annotation_path):
         self.add_new_cats(first_annotation, second_annotation, custom_cats=True)
         # self.add_new_cats(first_annotation, second_annotation)
         self.add_new_imgs(first_annotation, second_annotation)
         self.add_new_anns(first_annotation, second_annotation, custom_cats=True)
         # self.add_new_anns(first_annotation, second_annotation)
 
-        self.new_annotation_pth = new_annotation_pth
+        self.new_annotation_path = new_annotation_path
         print('NEW ANNOTATIONS COUNT: ', len(self.new_data['annotations']))
         self.save_annotations()
         
@@ -588,9 +635,9 @@ class JoinAnns():
         return data.coco.loadAnns(anns_ids)
 
     def save_annotations(self):
-        with open(self.new_annotation_pth, 'w') as outfile:
+        with open(self.new_annotation_path, 'w') as outfile:
             json.dump(self.new_data, outfile)
-        print('saved annotation to ', self.new_annotation_pth)
+        print('saved annotation to ', self.new_annotation_path)
 
     def set_default(self):
         self.new_annotations_data = []
@@ -620,9 +667,18 @@ def main(args=None):
     parser.add_argument('--new_annotation_path', help='Path to the user annotation of images', default='images/')
     args = parser.parse_args()
     annotation_pth = args.annotation_path
+    new_annotation_path = args.new_annotation_path
 
-    first_annotation = Cleaner(annotation_pth)
+    first_annotation = Cleaner(annotation_pth, new_annotation_path)
     first_annotation.show_statics()
+    first_annotation.extract_certain_cats()
+
+    first_annotation = Cleaner(new_annotation_path, new_annotation_path)
+    first_annotation.fix_ids()
+
+    first_annotation = Cleaner(new_annotation_path)
+    first_annotation.show_statics()
+
 
 if __name__ == '__main__':
     main()

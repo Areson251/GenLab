@@ -256,7 +256,6 @@ class AugmentDataset():
 
     def get_valid_coordinates(self, background_mask, object_height, object_width, depth_map):
         background_mask = np.array(background_mask)
-        print(f"background_mask is :\n{np.unique(background_mask, return_counts=True)}")
         background_object = np.where(background_mask == 255)
         background_object_coords = list(zip(background_object[1], background_object[0]))
 
@@ -439,12 +438,14 @@ class AugmentDataset():
         start_total_time = time.time()
 
         images_paths, background_masks_paths = self.load_annotation()
+        total_count_of_imgs = len(images_paths)
         self.target_masks = sorted([join(self.masks_path, f) for f in os.listdir(self.masks_path)])
 
         for idx, image_pth in tqdm(enumerate(images_paths)):
             start_time = time.time()
-            self.filename_img = "".join(image_pth.split('/')[-1].split('.')[:-1])
+            print(f"Start generating {idx+1}/{total_count_of_imgs}")
 
+            self.filename_img = "".join(image_pth.split('/')[-1].split('.')[:-1])
             self.make_dirs(f"{self.output_path}/{self.filename_img}")
 
             # load image and its background mask 

@@ -8,13 +8,18 @@
 
 # echo "CONVERT ANNOTATIONS"
 
+python scripts/utils/convert_masks.py \
+            --input_folder=datasets/original/YCOR/train/masks \
+            --label=3 \
+            --output_folder=datasets/original/YCOR/train/masks_road
+
 python augment_dataset.py \
-            --images_path="datasets/original/YCOR/val/images" \
-            --annotation_path="datasets/original/YCOR/val/masks_road" \
+            --images_path="datasets/original/YCOR/train/images" \
+            --annotation_path="datasets/original/YCOR/train/masks_road" \
             --masks_path="custom_datasets/target_masks" \
             --prompts_path="prompts/pothole.txt" \
             --scene_prompts_path="prompts/YCOR.txt" \
-            --output_path="tuning_exps/sd2_boxes/YCOR.augmented_val_gs-1_ckpt-6" \
+            --output_path="tuning_exps/sd2_boxes/YCOR.augmented_train_gs-1_ckpt-6" \
             --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
             --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-6000" \
             --padding=20 \
