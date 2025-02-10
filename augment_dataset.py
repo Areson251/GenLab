@@ -46,6 +46,7 @@ class AugmentDataset():
         self.annotation = None
         self.reference_annotation = None
         self.prompts = None
+        self.scene_prompts = None
         self.logger = None
         self.epsilon = 0.5
 
@@ -78,6 +79,7 @@ class AugmentDataset():
 
     def parse_args(self, args):
         self.prompts_path = args.prompts_path
+        self.scene_prompts_path = args.scene_prompts_path
         self.images_path = args.images_path
         self.annotation_path = args.annotation_path
         self.output_path = args.output_path
@@ -171,7 +173,15 @@ class AugmentDataset():
         with open(self.prompts_path, "r") as file:
             self.prompts = [line.rstrip() for line in file]
 
-        self.logger.info("Load prompts"+self.prompts_path)
+        self.logger.info("Load prompts: "+self.prompts_path)
+
+        if self.synth_scenes:
+            with open(self.scene_prompts_path, "r") as file:
+                self.scene_prompt = [line.rstrip() for line in file]
+                # TODO: fix this shit
+                self.scene_prompts = self.scene_prompt[0]
+
+            self.logger.info("Load scene prompts: "+self.scene_prompts_path)
 
     def load_annotation(self):
         if isinstance(self.annotation_path, str):
@@ -246,6 +256,7 @@ class AugmentDataset():
 
     def get_valid_coordinates(self, background_mask, object_height, object_width, depth_map):
         background_mask = np.array(background_mask)
+        print(f"background_mask is :\n{np.unique(background_mask, return_counts=True)}")
         background_object = np.where(background_mask == 255)
         background_object_coords = list(zip(background_object[1], background_object[0]))
 
@@ -356,8 +367,7 @@ class AugmentDataset():
     # MAIN FUNCTIONS
     def generate_scene(self, estimator_ouput, 
                        guidance_scale=3, controlnet_conditioning_scale=0.7):
-        prompt = """A snow-covered residential street in winter, with a thin layer of packed snow on the road. Tire tracks run along the length of the street, and large snowbanks are piled on both sides from plowing. A mix of houses line the street, including a white building with a sloped roof on the left. Trees in the distance include coniferous and leafless deciduous types. The sky is overcast, casting a soft, muted light across the scene. Utility poles with overhead wires follow the street, enhancing the suburban winter atmosphere."""
-        return self.scene_generation_pipe(prompt=prompt, 
+        return self.scene_generation_pipe(prompt=self.scene_prompts, 
                                         estimator_ouput=estimator_ouput, 
                                         guidance_scale=guidance_scale, 
                                         controlnet_conditioning_scale=controlnet_conditioning_scale)
@@ -371,6 +381,7 @@ class AugmentDataset():
 
         # Randomly select one of the valid coordinates
         if valid_coordinates == []:
+            self.logger.info(f"No valid coordinates found")
             return None, None, None, None, None
 
         random_coordinates = random.choice(valid_coordinates)
@@ -464,7 +475,7 @@ class AugmentDataset():
                 if not augmented_image:
                     self.add_image_info(f"{self.filename_img}.jpg", scene)
                     img_id += 1
-                    self.logger.info(f"No valid coordinates found")
+                    self.logger.info(f"GENERATION ERROR")
                     continue
 
                 new_image_name = f"{self.filename_img}_{i}.jpg"
@@ -506,6 +517,8 @@ if __name__ == "__main__":
     parser.add_argument("--guidance_scale", type=float, default="0.7")
     parser.add_argument("--seed", type=float, default="0")
     parser.add_argument("--synth_scenes", type=bool, default=True)
+    parser.add_argument("--scene_prompts_path", type=str, default="Realistic image",
+                        help="If --synth_scenes=True, use this arg to customize scene generation")
 
     args = parser.parse_args()
     
