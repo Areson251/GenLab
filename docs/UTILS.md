@@ -24,3 +24,12 @@ python scripts/utils/annotations_tools.py \
 --annotation_path="datasets/original/TAOMR/train.json" \
 --new_annotation_path="datasets/original/TAOMR/train_objects.json"
 ```
+
+## Extract certain images to folder
+Move selected images due to annotation:
+```
+python scripts/utils/filter_images.py \
+--images_path="datasets/original/TAOMR/train" \
+--annotation_path="datasets/original/TAOMR/train_objects.json" \
+--output_path="datasets/original/TAOMR/train_objects" 
+```

@@ -8,11 +8,19 @@
 
 # echo "CONVERT ANNOTATIONS"
 
+echo "CONVERT MASKS"
 python scripts/utils/convert_masks.py \
             --input_folder=datasets/original/YCOR/train/masks \
             --label=3 \
             --output_folder=datasets/original/YCOR/train/masks_road
 
+echo "MOVE IMAGES"
+python scripts/utils/filter_images.py \
+            --images_path="datasets/original/TAOMR/train" \
+            --annotation_path="datasets/original/TAOMR/train_objects.json" \
+            --output_path="datasets/original/TAOMR/train_objects" 
+
+echo "AUGMENT"
 python augment_dataset.py \
             --images_path="datasets/original/YCOR/train/images" \
             --annotation_path="datasets/original/YCOR/train/masks_road" \
