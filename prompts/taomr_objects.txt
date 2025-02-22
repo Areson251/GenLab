@@ -1,0 +1,11 @@
+bump
+manhole
+curb
+pit
+puddle
+firehose
+hose
+rail_track
+wire
+catch_basin
+poop

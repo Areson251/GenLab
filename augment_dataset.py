@@ -401,12 +401,13 @@ class AugmentDataset():
         box = [int(random_x), int(random_y), int(resized_width), int(resized_height)]
         self.logger.info(f"Box: {box}")
         cropped_image = image.crop((random_x, random_y, random_x+resized_width, random_y+resized_height))
+        detailed_prompt = f"A highly detailed and realistic depiction of {prompt}, featuring sharp details, natural lighting, and a clean, well-balanced composition."
         
         # inpainting
         start_generating_time = time.time()
         augmented_image = self.diffusion_pipe(
             cropped_image, cropped_resized_object, 
-            prompt, None, image.size[0], image.size[1],
+            detailed_prompt, None, image.size[0], image.size[1],
             self.iter_number, self.guidance_scale
         )
 
@@ -414,7 +415,7 @@ class AugmentDataset():
         self.avg_generation_time += generation_time
 
         # debug
-        augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image.png")
+        augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image_{prompt}.png")
         
         self.logger.info(f"Prompt: {prompt}")
         self.logger.info(f"Generation time: {generation_time}")
@@ -463,7 +464,7 @@ class AugmentDataset():
                 scene = self.generate_scene(depth_map)
             else:
                 scene = image 
-            scene.save(f"{self.output_path}/{self.filename_img}/scene.jpg")
+            scene.save(f"{self.output_path}/{self.filename_img}/scene.png")
 
             # generate object
             for i, prompt in enumerate(self.prompts):
@@ -474,12 +475,12 @@ class AugmentDataset():
                         depth_map, cropped_object, prompt)
 
                 if not augmented_image:
-                    self.add_image_info(f"{self.filename_img}.jpg", scene)
+                    self.add_image_info(f"{self.filename_img}_{prompt}.png", scene)
                     img_id += 1
                     self.logger.info(f"GENERATION ERROR")
                     continue
 
-                new_image_name = f"{self.filename_img}_{i}.jpg"
+                new_image_name = f"{self.filename_img}_{prompt}.png"
                 augmented_image.save(f"{self.output_path}/{self.filename_img}/"+new_image_name)
                 # augmented_image.save(f"{self.output_path}/images/"+new_image_name)
 
@@ -517,7 +518,7 @@ if __name__ == "__main__":
     parser.add_argument("--iter_number", type=int, default="20")
     parser.add_argument("--guidance_scale", type=float, default="0.7")
     parser.add_argument("--seed", type=float, default="0")
-    parser.add_argument("--synth_scenes", type=bool, default=True)
+    parser.add_argument("--synth_scenes", type=bool, default=False)
     parser.add_argument("--scene_prompts_path", type=str, default="Realistic image",
                         help="If --synth_scenes=True, use this arg to customize scene generation")
 

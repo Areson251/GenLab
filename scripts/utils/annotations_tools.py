@@ -24,6 +24,7 @@ ALLOWDED_CATEGORIES = {
     3: "wire",
     20: "catch_basin",
     5: "poop",
+    14: "road",
     }
 
 CATS_PRIORITY = {

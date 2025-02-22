@@ -8,65 +8,73 @@
 
 # echo "CONVERT ANNOTATIONS"
 
-echo "CONVERT MASKS"
-python scripts/utils/convert_masks.py \
-            --input_folder=datasets/original/YCOR/train/masks \
-            --label=3 \
-            --output_folder=datasets/original/YCOR/train/masks_road
+# echo "CONVERT MASKS"
+# python scripts/utils/convert_masks.py \
+#             --input_folder=datasets/original/YCOR/train/masks \
+#             --label=3 \
+#             --output_folder=datasets/original/YCOR/train/masks_road
 
-echo "MOVE IMAGES"
-python scripts/utils/filter_images.py \
-            --images_path="datasets/original/TAOMR/train" \
-            --annotation_path="datasets/original/TAOMR/train_objects.json" \
-            --output_path="datasets/original/TAOMR/train_objects" 
+# echo "ALLOWDED_CATEGORIES"
+# python scripts/utils/annotations_tools.py \
+#             --annotation_path="datasets/original/TAOMR/val.json" \
+#             --new_annotation_path="datasets/original/TAOMR/val_objects.json"
 
-echo "AUGMENT"
-python augment_dataset.py \
-            --images_path="datasets/original/YCOR/train/images" \
-            --annotation_path="datasets/original/YCOR/train/masks_road" \
-            --masks_path="custom_datasets/target_masks" \
-            --prompts_path="prompts/pothole.txt" \
-            --scene_prompts_path="prompts/YCOR.txt" \
-            --output_path="tuning_exps/sd2_boxes/YCOR.augmented_train_gs-1_ckpt-6" \
-            --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-            --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-6000" \
-            --padding=20 \
-            --guidance_scale=1 \
-            --seed=0 
- 
-# declare -a gs_arr=(0.7 1 2 3)
-# for gs in "${gs_arr[@]}"; do 
-#     echo "START GS ${gs} GENERATION"
-#     python augment_dataset.py \
-#             --images_path="datasets/original/INSTSnowRoadDetection/test" \
-#             --annotation_path="datasets/original/INSTSnowRoadDetection/annotation_test.json" \
+# echo "MOVE IMAGES"
+# python scripts/utils/filter_images.py \
+#             --images_path="datasets/original/TAOMR/val" \
+#             --annotation_path="datasets/original/TAOMR/val_objects.json" \
+#             --output_path="datasets/original/TAOMR/val_objects" 
+
+# echo "AUGMENT"
+# python augment_dataset.py \
+#             --images_path="datasets/original/TAOMR/val" \
+#             --annotation_path="datasets/original/TAOMR/val_objects.json" \
 #             --masks_path="custom_datasets/target_masks" \
-#             --prompts_path="prompts/pothole.txt" \
-#             --output_path="tuning_exps/sd2_boxes/INSTSnowRoadDetection.augmented_gs-${gs}_ckpt-6" \
+#             --prompts_path="prompts/taomr_objects.txt" \
+#             --scene_prompts_path="prompts/taomr.txt" \
+            # --synth_scenes \
+#             --output_path="tuning_exps/sd2_boxes/taomr.augmented_val_gs-1_ckpt-6" \
 #             --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
 #             --lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-6000" \
 #             --padding=20 \
-#             --guidance_scale=${gs} \
+#             --guidance_scale=1 \
 #             --seed=0 
-#     done
-# echo "IMAGES GENERATED"
+ 
+declare -a ckpt_arr=(2 4 6 8 10)
+for ckpt in "${ckpt_arr[@]}"; do
+    echo "START ckpt ${ckpt} GENERATION"
 
-# declare -a gs_arr=(0.7 1 2 3)
-# for gs in "${gs_arr[@]}"; do 
-#     python3 scripts/utils/merge_images.py \
-#         --output_path="results/sd2_boxes/synth_pothole_sd2_${gs}.png" \
-#         --images_folders \
-#         "custom_datasets/scenes/pothole_scenes" \
-#         "tuning_exps/sd2_masks/full-2000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-4000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-6000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-8000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-10000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-12000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-14000-${gs}/" \
-#         "tuning_exps/sd2_masks/full-${gs}/"
-# done
-# echo "DONE RESULT IMAGE"
+    declare -a gs_arr=(0.7 1 2 3)
+    for gs in "${gs_arr[@]}"; do  
+        echo "START GS ${gs} GENERATION"
+        python augment_dataset.py \
+                --images_path="datasets/original/YCOR/test_from_val/images" \
+                --annotation_path="datasets/original/YCOR/test_from_val/masks_road" \
+                --masks_path="custom_datasets/target_masks" \
+                --prompts_path="prompts/taomr_objects.txt" \
+                --output_path="tuning_exps/sd2_boxes/YCOR.augmented_test_gs-${gs}_ckpt-taomr_small_${ckpt}" \
+                --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+                --lora_chkpt="model_output/lora_taomr_sd2/checkpoint-$((ckpt*1000))" \
+                --padding=20 \
+                --guidance_scale=${gs} \
+                --seed=0 
+        done
+    done
+echo "IMAGES GENERATED"
+
+declare -a gs_arr=(0.7 1 2 3)
+for gs in "${gs_arr[@]}"; do 
+    python3 scripts/utils/merge_images.py \
+        --output_path="results/sd2_boxes/synth_taomr_small_val_sd2_${gs}.png" \
+        --images_folders \
+        "custom_datasets/scenes/pothole_scenes" \
+        "tuning_exps/sd2_boxes/taomr.augmented_test_gs-${gs}_ckpt-taomr_small_2" \
+        "tuning_exps/sd2_boxes/taomr.augmented_test_gs-${gs}_ckpt-taomr_small_4" \
+        "tuning_exps/sd2_boxes/taomr.augmented_test_gs-${gs}_ckpt-taomr_small_6" \
+        "tuning_exps/sd2_boxes/taomr.augmented_test_gs-${gs}_ckpt-taomr_small_8" \
+        "tuning_exps/sd2_boxes/taomr.augmented_test_gs-${gs}_ckpt-taomr_small_10" 
+    done
+echo "DONE RESULT IMAGE"
 
 
 # python3 scripts/utils/merge_images.py \
