@@ -13,13 +13,10 @@ class StableDiffusionModel():
         self.textual_inversion_checkpoint = None
 
         self.device = torch.device(device)
-        # self.device = torch.device("cuda")
         print("DEVICE FOR SD: ", self.device)
 
         self.pipe = StableDiffusionInpaintPipeline.from_pretrained(
             pretrained_model_name_or_path=self.pretrained,
-            # unet=unet, 
-            # text_encoder=text_encoder,
             requires_safety_checker=False,
             safety_checker=None,
             variant='fp16',
@@ -44,7 +41,7 @@ class StableDiffusionModel():
                           w_orig, h_orig, 
                           iter_number, guidance_scale):
         
-        inpaint_images = self.pipe(
+        inpaint_image = self.pipe(
             num_inference_steps=iter_number,
             prompt=positive_prompt,
             # negative_prompt=negative_prompt,
@@ -52,11 +49,7 @@ class StableDiffusionModel():
             mask_image=mask,
             guidance_scale=guidance_scale,
             strength=1.0
-        ).images
+        ).images[0]
 
-        inpaint_image = inpaint_images[0]
-
-        # inpaint_image = inpaint_image.resize((w_orig, h_orig))
-        # return np.array(inpaint_image)
         return inpaint_image
     

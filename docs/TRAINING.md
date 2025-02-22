@@ -41,10 +41,35 @@ accelerate launch --main_process_port=12550 scripts/lora/train_inpainting_lora.p
   --lr_warmup_steps=0 \
   --checkpointing_steps=2000 \
   --report_to="wandb" \
+  --loss="custom" \
+  --seed=1337
+```
+
+### StableDiffusion tuning via CUSTOM LOSS 
+```
+accelerate launch --main_process_port=12550 scripts/lora/train_inpainting_lora_loss.py \
+  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting" \
+  --instance_data_dir="datasets/taomr/val" \
+  --annotation_path="datasets/taomr/val_super.json" \
+  --resolution=512 \
+  --train_batch_size=4 \
+  --gradient_accumulation_steps=8 \
+  --output_dir="model_output/lora_test" \
+  --max_train_steps=10000 \
+  --learning_rate=1e-06 \
+  --max_grad_norm=1 \
+  --lr_scheduler="cosine" \
+  --lr_warmup_steps=0 \
+  --checkpointing_steps=2000 \
+  --loss="custom" \
+  --report_to="wandb" \
   --seed=1337
 ```
 
 ##### TODO: add experiments names in wandb 
+  --scale_lr=True \
+  --report_to="wandb" \
+
 
 #### Prepare dataset
 If you have VOC dataset format use folowwing command:
