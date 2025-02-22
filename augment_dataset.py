@@ -57,11 +57,9 @@ class AugmentDataset():
         self.set_seed()
 
         self.make_dirs(self.output_path)
-        # self.make_dirs(f"{self.output_path}/images")
 
         self.logger = logging.getLogger(__name__)
-        path = os.path.join("log.log")
-        # path = os.path.join(self.output_path, "log.log")
+        path = os.path.join(self.output_path, "log.log")
         logging.basicConfig(filename=path, level=logging.INFO)
 
         self.load_pipes()
