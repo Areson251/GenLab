@@ -3,11 +3,12 @@ import logging
 import math
 import sys
 import os
+import copy
 import random
 import shutil
-from contextlib import nullcontext
 from pathlib import Path
-import copy
+from contextlib import nullcontext
+import matplotlib.pyplot as plt
 
 import datasets
 import numpy as np
@@ -103,7 +104,8 @@ def prepare_mask_and_masked_image(image, mask):
     image = torch.from_numpy(image).to(dtype=torch.float32) / 127.5 - 1.0
 
     mask = np.array(mask.convert("L"))
-    mask = mask.astype(np.float32) / 255.0
+    if mask.max() > 1:
+        mask = mask.astype(np.float32) / 255.0
     mask = mask[None, None]
     mask[mask < 0.5] = 0
     mask[mask >= 0.5] = 1
@@ -238,7 +240,7 @@ def log_validation(
                             wandb.Image(image, caption=f"{i}: {prompts[i]}") for i, image in enumerate(images)
                         ],
                     f"masks images": [ 
-                            wandb.Image(mask, caption=f"{i}: {prompts[i]}") for i, mask in enumerate(masks)
+                            wandb.Image(mask.numpy().astype(np.uint8).squeeze(), caption=f"{i}: {prompts[i]}") for i, mask in enumerate(masks)
                         ],
                 }
             )
