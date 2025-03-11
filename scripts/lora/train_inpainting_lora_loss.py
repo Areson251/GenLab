@@ -240,7 +240,7 @@ def log_validation(
                             wandb.Image(image, caption=f"{i}: {prompts[i]}") for i, image in enumerate(images)
                         ],
                     f"masks images": [ 
-                            wandb.Image(mask.numpy().astype(np.uint8).squeeze(), caption=f"{i}: {prompts[i]}") for i, mask in enumerate(masks)
+                            wandb.Image(mask.numpy().astype(np.uint8), caption=f"{i}: {prompts[i]}") for i, mask in enumerate(masks)
                         ],
                 }
             )
@@ -1060,10 +1060,15 @@ def main():
         ] * args.train_batch_size
 
         remover_text_inputs = tokenizer(
-            remover_prompts, padding="max_length", truncation=True, max_length=tokenizer.model_max_length, return_tensors="pt"
-        ).to(accelerator.device)
+            remover_prompts, 
+            padding="do_not_pad", 
+            truncation=True, 
+            max_length=tokenizer.model_max_length
+        ) # .to(accelerator.device)
 
-        remover_encoder_hidden_states = text_encoder(remover_text_inputs.input_ids, return_dict=False)[0]
+        remover_input_ids = tokenizer.pad({"input_ids": remover_text_inputs.input_ids}, padding=True, return_tensors="pt").input_ids.to(accelerator.device)
+        remover_encoder_hidden_states = text_encoder(remover_input_ids, return_dict=False)[0]
+        # remover_encoder_hidden_states = text_encoder(remover_text_inputs.input_ids, return_dict=False)[0]
 
 
     for epoch in range(first_epoch, args.num_train_epochs):
@@ -1136,15 +1141,21 @@ def main():
                         remover_pred = unet_remover(latent_model_input, timesteps, remover_encoder_hidden_states, return_dict=False)[0]
 
                     # Calculate the custom loss
+<<<<<<< HEAD
                     # TODO: add weights to argparse
                     alpha = args.alpha if hasattr(args, "alpha") else 1.0
                     beta = args.beta if hasattr(args, "beta") else 1.0
                     gamma = args.gamma if hasattr(args, "gamma") else 1e-6
+=======
+                    alpha = args.loss_alpha 
+                    beta = args.loss_beta 
+                    gamma = args.loss_gamma 
+>>>>>>> 508b027 (fix another bug ¯\_( ͡❛ ͜ʖ ͡❛)_/¯)
 
-                    obj_loss = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - output||
-                    empty_loss = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - output||
+                    loss_obj = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - output||
+                    loss_empty = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - output||
 
-                    loss = alpha * obj_loss + beta / (empty_loss + gamma)
+                    loss = alpha * loss_obj + beta / (loss_empty + gamma)
 
                 else:
                     if args.snr_gamma is None:
@@ -1166,8 +1177,13 @@ def main():
                         loss = loss.mean(dim=list(range(1, len(loss.shape)))) * mse_loss_weights
                         loss = loss.mean()
 
+
                 mssim = compute_ssim(model_pred.float(), target.float())
                 mssim = mssim.mean()
+
+                if args.loss == "custom":
+                    mssim_remover = compute_ssim(remover_pred.float(), target.float())
+                    mssim_remover = mssim_remover.mean()
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
@@ -1180,6 +1196,11 @@ def main():
                             "train mssim": mssim, 
                             "train loss": train_loss, 
                         })
+
+                        if args.loss == "custom":
+                            tracker.log({
+                            "train mssim_remover": mssim_remover, 
+                            }, step=global_step)
 
                 # Backpropagate
                 accelerator.backward(loss)
