@@ -688,6 +688,27 @@ def parse_args():
         help="The name of loss function. Default is mse, but you can use custom loss",
     )
 
+    parser.add_argument(
+        "--loss_alpha",
+        type=float,
+        default=0.5,
+        help="The name of loss function. Default is mse, but you can use custom loss",
+    )
+
+    parser.add_argument(
+        "--loss_beta",
+        type=float,
+        default=0.5,
+        help="The name of loss function. Default is mse, but you can use custom loss",
+    )
+
+    parser.add_argument(
+        "--loss_gamma",
+        type=float,
+        default=1e-6,
+        help="The name of loss function. Default is mse, but you can use custom loss",
+    )
+
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
     if env_local_rank != -1 and env_local_rank != args.local_rank:
@@ -997,8 +1018,8 @@ def main():
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        accelerator.init_trackers("test_custom_lora", config=vars(args))
-        # accelerator.init_trackers("tune_augmentation", config=vars(args))
+        # accelerator.init_trackers("test_custom_lora", config=vars(args))
+        accelerator.init_trackers("tune_augmentation", config=vars(args))
         if args.report_to == "wandb":
             accelerator.trackers[0].tracker.define_metric("mean ssim", step_metric="global_step")
 
@@ -1141,16 +1162,9 @@ def main():
                         remover_pred = unet_remover(latent_model_input, timesteps, remover_encoder_hidden_states, return_dict=False)[0]
 
                     # Calculate the custom loss
-<<<<<<< HEAD
-                    # TODO: add weights to argparse
-                    alpha = args.alpha if hasattr(args, "alpha") else 1.0
-                    beta = args.beta if hasattr(args, "beta") else 1.0
-                    gamma = args.gamma if hasattr(args, "gamma") else 1e-6
-=======
                     alpha = args.loss_alpha 
                     beta = args.loss_beta 
                     gamma = args.loss_gamma 
->>>>>>> 508b027 (fix another bug ¯\_( ͡❛ ͜ʖ ͡❛)_/¯)
 
                     loss_obj = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - output||
                     loss_empty = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - output||
@@ -1215,7 +1229,8 @@ def main():
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                accelerator.log({"train_loss": train_loss}, step=global_step)
+                accelerator.log({"train_loss": train_loss})
+                # accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
                 if global_step % args.checkpointing_steps == 0:

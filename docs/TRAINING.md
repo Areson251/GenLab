@@ -70,6 +70,48 @@ accelerate launch --main_process_port=12553 scripts/lora/train_inpainting_lora_l
   --seed="1337" 
 ```
 
+
+
+
+
+
+accelerate launch --main_process_port=12555 scripts/lora/train_inpainting_lora_loss.py \
+  --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting" \
+  --instance_data_dir="datasets/original/pothole_full/images" \
+  --annotation_path="datasets/original/pothole_full/pothole_full.json" \
+  --validation_data_dir="datasets/original/pothole_full/images" \
+  --annotation_val_path="datasets/original/pothole_full/pothole_full.json" \
+  --num_validation_images="1" \
+  --validation_epochs="1" \
+  --resolution="512" \
+  --train_batch_size="4" \
+  --gradient_accumulation_steps="4" \
+  --output_dir="model_output/lora_custom_taomr" \
+  --max_train_steps="10000" \
+  --learning_rate="1e-06" \
+  --max_grad_norm="1" \
+  --lr_scheduler="cosine" \
+  --lr_warmup_steps="0" \
+  --checkpointing_steps="2000" \
+  --report_to="wandb" \
+  --loss="custom" \
+  --loss_alpha="0.7" \
+  --loss_beta="0.3" \
+  --seed="1337" 
+
+
+
+
+
+
+
+
+
+
+
+  
+
+
 ##### TODO: add experiments names in wandb 
   --scale_lr=True \
   --report_to="wandb" \
