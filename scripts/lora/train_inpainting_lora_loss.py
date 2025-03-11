@@ -139,7 +139,7 @@ def random_mask(im_shape, ratio=1, mask_full_image=False):
     return mask
 
 
-def compute_ssim(img1, img2):
+def compute_ssim(img1, img2, win_size=3):
     """
     Compute the Structural Similarity Index (SSIM) between two images.
     
@@ -149,6 +149,7 @@ def compute_ssim(img1, img2):
     
     Args:
     img1, img2: Images in one of the supported formats.
+    win_size: Size of the window for SSIM calculation. Default is 3.
     
     Returns:
     SSIM score (float)
@@ -158,16 +159,25 @@ def compute_ssim(img1, img2):
     if isinstance(img2, Image.Image):
         img2 = transforms.ToTensor()(img2)
 
-    if img1.dim() == 4:  
-        img1 = img1.squeeze(0)
+    if img1.dim() == 4:
+        img1 = img1.squeeze(0)  # Shape: [C, H, W]
     if img2.dim() == 4:
-        img2 = img2.squeeze(0)
+        img2 = img2.squeeze(0)  # Shape: [C, H, W]
 
-    img1 = img1.detach().cpu().permute(1, 2, 0).numpy()
-    img2 = img2.detach().cpu().permute(1, 2, 0).numpy()
+    if img1.shape != img2.shape:
+        raise ValueError(f"Image shapes do not match: {img1.shape} vs {img2.shape}")
+    
+    img1 = img1.detach().cpu().numpy()
+    img2 = img2.detach().cpu().numpy()
 
-    ssim_score = ssim(img1, img2, data_range=1, channel_axis=-1)
+    if img1.shape[0] == 1:  # If it's grayscale [1, H, W], move channels to last
+        img1 = np.squeeze(img1, axis=0)  # [H, W]
+        img2 = np.squeeze(img2, axis=0)  # [H, W]
+
+    win_size = min(win_size, img1.shape[1], img1.shape[2])
+    ssim_score = ssim(img1, img2, data_range=img1.max() - img1.min(), channel_axis=-1 if img1.ndim == 3 else None, win_size=win_size)
     return ssim_score
+
 
 
 def log_validation(
@@ -222,7 +232,7 @@ def log_validation(
             tracker.log({
                     f"mean ssim": mssim, 
                     f"generated images": [ 
-                            wandb.Image(image, caption=f"{i}: {prompts[i]}") for i, image in enumerate(generated_images)
+                            wandb.Image(gen_image, caption=f"{i}: {prompts[i]}") for i, gen_image in enumerate(generated_images)
                         ],
                     f"original images": [ 
                             wandb.Image(image, caption=f"{i}: {prompts[i]}") for i, image in enumerate(images)
@@ -324,7 +334,7 @@ class customDataset(Dataset):
                 mask = np.zeros((image_data["height"], image_data["width"]))
                 mask[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]] = 1
                 mask = Image.fromarray(np.uint8(mask)).convert('RGB')
-                self.instance_prompt = f"A detailed, high-quality rendering of {self.categories[mask_rle["category_id"]]}. Realistic lighting, sharp details, and a clean composition."
+                self.instance_prompt= f"A detailed, high-quality rendering of {self.categories[mask_rle['category_id']]}. Realistic lightning, sharp details, and a clean composition"
 
             else: 
                 mask = random_mask(instance_image.size)
@@ -986,6 +996,7 @@ def main():
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
         accelerator.init_trackers("test_custom_lora", config=vars(args))
+        # accelerator.init_trackers("tune_augmentation", config=vars(args))
         if args.report_to == "wandb":
             accelerator.trackers[0].tracker.define_metric("mean ssim", step_metric="global_step")
 

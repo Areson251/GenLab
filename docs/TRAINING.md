@@ -47,23 +47,27 @@ accelerate launch --main_process_port=12550 scripts/lora/train_inpainting_lora.p
 
 ### StableDiffusion tuning via CUSTOM LOSS 
 ```
-accelerate launch --main_process_port=12550 scripts/lora/train_inpainting_lora_loss.py \
+accelerate launch --main_process_port=12553 scripts/lora/train_inpainting_lora_loss.py \
   --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting" \
-  --instance_data_dir="datasets/taomr/val" \
-  --annotation_path="datasets/taomr/val_super.json" \
-  --resolution=512 \
-  --train_batch_size=4 \
-  --gradient_accumulation_steps=8 \
-  --output_dir="model_output/lora_test" \
-  --max_train_steps=10000 \
-  --learning_rate=1e-06 \
-  --max_grad_norm=1 \
+  --instance_data_dir="datasets/original/TAOMR/train_objects" \
+  --annotation_path="datasets/original/TAOMR/train_objects.json" \
+  --validation_data_dir="datasets/original/TAOMR/val_objects" \
+  --annotation_val_path="datasets/original/TAOMR/val_objects.json" \
+  --num_validation_images="1" \
+  --validation_epochs="1" \
+  --resolution="512" \
+  --train_batch_size="4" \
+  --gradient_accumulation_steps="4" \
+  --output_dir="model_output/lora_custom_taomr" \
+  --max_train_steps="10000" \
+  --learning_rate="1e-06" \
+  --max_grad_norm="1" \
   --lr_scheduler="cosine" \
-  --lr_warmup_steps=0 \
-  --checkpointing_steps=2000 \
-  --loss="custom" \
+  --lr_warmup_steps="0" \
+  --checkpointing_steps="2000" \
   --report_to="wandb" \
-  --seed=1337
+  --loss="custom" \
+  --seed="1337" 
 ```
 
 ##### TODO: add experiments names in wandb 

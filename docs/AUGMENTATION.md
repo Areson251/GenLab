@@ -2,13 +2,16 @@
 To run augmentation use folowing sommand:
 ```
 python augment_dataset.py \
---dataset_path="datasets/original/INSTSnowRoadDetection" \
---prompts_path="prompts/pothole.txt" \
+--images_path="datasets/original/INSTSnowRoadDetection/test"  \
+--annotation_path="datasets/original/INSTSnowRoadDetection/annotation_test.json"  \
 --masks_path="custom_datasets/target_masks" \
---output_path="datasets/augmented/INSTSnowRoadDetection_augmented-pothole-15-10k" \
---sd_chkpt="model_output/db_inp_snowy_pothole_sd2/checkpoint-10000" \
+--prompts_path="prompts/pothole.txt" \
+--output_path="tuning_exps/INSTSnowRoadDetection_augmented"  \
+--sd_chkpt="stabilityai/stable-diffusion-2-inpainting"  \
+--lora_chkpt="model_output/lora_pothole-full2_sd2/checkpoint-6000"  \
 --padding="20" \
---guidance_scale="15"
+--guidance_scale="5" \
+--seed="0" 
 ```
 
 ### PowerPaint augmentation

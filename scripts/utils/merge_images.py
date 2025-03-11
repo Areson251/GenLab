@@ -108,6 +108,7 @@ if __name__ == "__main__":
         else:
             images_paths = [f for f in os.listdir(folder)]
             images_paths.remove('annotation.json')
+            images_paths.remove('log.log')
 
         images_paths = sorted(images_paths)
 
@@ -118,7 +119,9 @@ if __name__ == "__main__":
             if original:
                 image = Image.open(os.path.join(folder, image_path))
             else:
-                file_name = os.path.join(folder, image_path, image_path)+"_0.jpg"
+                # file_name = os.path.join(folder, image_path, image_path)+"_pothole.png"
+                file_name = os.path.join(folder, image_path, image_path)+"_pit.png"
+                # file_name = os.path.join(folder, image_path, image_path)+"_0.jpg"
                 image = Image.open(file_name)
             merger.add_image(image) 
 

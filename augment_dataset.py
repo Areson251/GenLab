@@ -487,8 +487,8 @@ class AugmentDataset():
                 img_id = len(self.annotation["images"])
                 self.add_annotation(img_id, scene, cropped_resized_object, 
                                     random_x, random_y, 
-                                    box, "pothole")
-                                    # box, prompt)
+                                    box, prompt)
+                                    # box, "pothole")
 
             avg_total_time += time.time() - start_time
             self.logger.info(f"Average generation time: {self.avg_generation_time/(idx+1)}")
