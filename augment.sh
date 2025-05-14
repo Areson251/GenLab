@@ -27,7 +27,8 @@
 
 
  
-declare -a ckpt_arr=(2 4 6 8 10)
+declare -a ckpt_arr=(8 10)
+# declare -a ckpt_arr=(2 4 6 8 10)
 for ckpt in "${ckpt_arr[@]}"; do
     echo "START ckpt ${ckpt} GENERATION"
 
@@ -38,10 +39,10 @@ for ckpt in "${ckpt_arr[@]}"; do
                 --images_path="custom_datasets/scenes/pothole_scenes" \
                 --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
                 --masks_path="custom_datasets/target_masks" \
-                --prompts_path="prompts/pothole.txt" \
-                --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_${ckpt}" \
+                --prompts_path="prompts/taomr_objects.txt" \
+                --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_${ckpt}" \
                 --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-                --lora_chkpt="model_output/lora_taomr_sd2/checkpoint-$((ckpt*1000))" \
+                --lora_chkpt="model_output/lora_custom_taomr/checkpoint-$((ckpt*1000))" \
                 --padding=20 \
                 --guidance_scale=${gs} \
                 --device="cuda:1" \
@@ -50,19 +51,19 @@ for ckpt in "${ckpt_arr[@]}"; do
     done
 echo "IMAGES GENERATED"
 
-declare -a gs_arr=(0.7 1 2 3)
-for gs in "${gs_arr[@]}"; do 
-    python3 scripts/utils/merge_images.py \
-        --output_path="results/sd2_boxes/pothole_scenes_taomr_small_test_sd2_${gs}.png" \
-        --images_folders \
-        "custom_datasets/scenes/pothole_scenes" \
-        "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_2" \
-        "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_4" \
-        "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_6" \
-        "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_8" \
-        "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_10" 
-    done
-echo "DONE RESULT IMAGE"
+# declare -a gs_arr=(0.7 1 2 3)
+# for gs in "${gs_arr[@]}"; do 
+#     python3 scripts/utils/merge_images.py \
+#         --output_path="results/sd2_boxes/pothole_scenes_taomr_small_custom_${gs}.png" \
+#         --images_folders \
+#         "custom_datasets/scenes/pothole_scenes" \
+#         "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_2" \
+#         "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_4" \
+#         "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_6" \
+#         "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_8" \
+#         "tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_10" 
+#     done
+# echo "DONE RESULT IMAGE"
 
 
 # echo "MOVING IMAGES"

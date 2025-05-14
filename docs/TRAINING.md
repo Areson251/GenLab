@@ -75,12 +75,12 @@ accelerate launch --main_process_port=12553 scripts/lora/train_inpainting_lora_l
 
 
 
-accelerate launch --main_process_port=12555 scripts/lora/train_inpainting_lora_loss.py \
+accelerate launch --main_process_port=12560 scripts/lora/train_inpainting_lora_loss.py \
   --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting" \
-  --instance_data_dir="datasets/original/pothole_full/images" \
-  --annotation_path="datasets/original/pothole_full/pothole_full.json" \
-  --validation_data_dir="datasets/original/pothole_full/images" \
-  --annotation_val_path="datasets/original/pothole_full/pothole_full.json" \
+  --instance_data_dir="datasets/original/TAOMR/train_objects" \
+  --annotation_path="datasets/original/TAOMR/train_objects.json" \
+  --validation_data_dir="datasets/original/TAOMR/val_objects" \
+  --annotation_val_path="datasets/original/TAOMR/val_objects.json" \
   --num_validation_images="1" \
   --validation_epochs="1" \
   --resolution="512" \

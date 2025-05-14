@@ -156,28 +156,44 @@ def compute_ssim(img1, img2, win_size=3):
     Returns:
     SSIM score (float)
     """
+    # Convert PIL images to PyTorch tensors
     if isinstance(img1, Image.Image):
         img1 = transforms.ToTensor()(img1)
     if isinstance(img2, Image.Image):
         img2 = transforms.ToTensor()(img2)
-
+    
+    # Ensure tensors are in [C, H, W] format
     if img1.dim() == 4:
-        img1 = img1.squeeze(0)  # Shape: [C, H, W]
+        img1 = img1.squeeze(0)
     if img2.dim() == 4:
-        img2 = img2.squeeze(0)  # Shape: [C, H, W]
-
+        img2 = img2.squeeze(0)
+    
+    # Ensure both images have the same shape
     if img1.shape != img2.shape:
         raise ValueError(f"Image shapes do not match: {img1.shape} vs {img2.shape}")
     
+    # Convert to NumPy arrays
     img1 = img1.detach().cpu().numpy()
     img2 = img2.detach().cpu().numpy()
-
-    if img1.shape[0] == 1:  # If it's grayscale [1, H, W], move channels to last
-        img1 = np.squeeze(img1, axis=0)  # [H, W]
-        img2 = np.squeeze(img2, axis=0)  # [H, W]
-
-    win_size = min(win_size, img1.shape[1], img1.shape[2])
-    ssim_score = ssim(img1, img2, data_range=img1.max() - img1.min(), channel_axis=-1 if img1.ndim == 3 else None, win_size=win_size)
+    
+    # Handle grayscale images (single channel)
+    if img1.shape[0] == 1:  # [1, H, W] -> [H, W]
+        img1 = np.squeeze(img1, axis=0)
+        img2 = np.squeeze(img2, axis=0)
+        channel_axis = None  # No channel axis for grayscale
+    else:
+        img1 = np.moveaxis(img1, 0, -1)  # Convert [C, H, W] -> [H, W, C]
+        img2 = np.moveaxis(img2, 0, -1)
+        channel_axis = -1  # Last axis is channel
+    
+    # Adjust win_size to be odd and within valid range
+    min_dim = min(img1.shape[0], img1.shape[1])
+    win_size = min(win_size, min_dim)
+    if win_size % 2 == 0:
+        win_size -= 1  # Ensure win_size is odd
+    
+    ssim_score = ssim(img1, img2, data_range=img1.max() - img1.min(), 
+                       channel_axis=channel_axis, win_size=win_size)
     return ssim_score
 
 
@@ -1078,18 +1094,21 @@ def main():
         # Сreate the input text condition for the unet_remover
         remover_prompts = [
             "Remove the masked object and seamlessly blend the background. Match surrounding textures, colors, and lighting for a natural and realistic appearance. No visible artifacts or distortions."
-        ] * args.train_batch_size
+        ] # * args.train_batch_size
 
         remover_text_inputs = tokenizer(
             remover_prompts, 
-            padding="do_not_pad", 
+            padding="max_length", 
+            # padding="do_not_pad", 
             truncation=True, 
-            max_length=tokenizer.model_max_length
-        ) # .to(accelerator.device)
+            max_length=tokenizer.model_max_length,
+            return_tensors="pt"
+        ).to(accelerator.device)
 
-        remover_input_ids = tokenizer.pad({"input_ids": remover_text_inputs.input_ids}, padding=True, return_tensors="pt").input_ids.to(accelerator.device)
-        remover_encoder_hidden_states = text_encoder(remover_input_ids, return_dict=False)[0]
-        # remover_encoder_hidden_states = text_encoder(remover_text_inputs.input_ids, return_dict=False)[0]
+        # remover_input_ids = tokenizer.pad({"input_ids": remover_text_inputs.input_ids}, padding=True, return_tensors="pt").input_ids.to(accelerator.device)
+        # remover_encoder_hidden_states = text_encoder(remover_input_ids, return_dict=False)[0]
+        remover_encoder_hidden_states = text_encoder(remover_text_inputs.input_ids, return_dict=False)[0]
+
 
 
     for epoch in range(first_epoch, args.num_train_epochs):
@@ -1158,16 +1177,20 @@ def main():
                 
                 # === NEW LOSS WITH unet_remover ===
                 if args.loss == "custom":
-                    with torch.no_grad():
-                        remover_pred = unet_remover(latent_model_input, timesteps, remover_encoder_hidden_states, return_dict=False)[0]
+                    n = latent_model_input.shape[0]
+                    remover_encoder_hidden_states_input = remover_encoder_hidden_states.expand(n, -1, -1)
+                    
+                    with torch.no_grad():    
+                        remover_pred = unet_remover(latent_model_input, timesteps, remover_encoder_hidden_states_input, return_dict=False)[0]
 
-                    # Calculate the custom loss
+                    # Calculate the custom loss 
                     alpha = args.loss_alpha 
                     beta = args.loss_beta 
                     gamma = args.loss_gamma 
 
-                    loss_obj = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - output||
-                    loss_empty = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - output||
+                    loss_obj = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - gt||
+                    loss_empty = F.mse_loss(model_pred.float(), remover_pred.float(), reduction="mean")  # ||𝜖_{obj} - 𝜖_{empt}||
+                    # loss_empty = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - gt||
 
                     loss = alpha * loss_obj + beta / (loss_empty + gamma)
 
@@ -1196,14 +1219,37 @@ def main():
                 mssim = mssim.mean()
 
                 if args.loss == "custom":
-                    mssim_remover = compute_ssim(remover_pred.float(), target.float())
+                    mssim_remover = compute_ssim(remover_pred.float(), model_pred.float())
                     mssim_remover = mssim_remover.mean()
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss.item() / args.gradient_accumulation_steps
 
-                for tracker in accelerator.trackers:
+                # for tracker in accelerator.trackers:
+                #     # TODO: add tensorboard 
+                #     if tracker.name == "wandb":
+                #         tracker.log({
+                #             "train mssim": mssim, 
+                #             "train loss": train_loss, 
+                #         })
+
+                #         if args.loss == "custom":
+                #             tracker.log({
+                #             "train mssim_remover": mssim_remover, 
+                #             })
+
+                # Backpropagate
+                accelerator.backward(loss)
+                if accelerator.sync_gradients:
+                    params_to_clip = lora_layers
+                    accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
+
+
+            for tracker in accelerator.trackers:
                     # TODO: add tensorboard 
                     if tracker.name == "wandb":
                         tracker.log({
@@ -1214,16 +1260,8 @@ def main():
                         if args.loss == "custom":
                             tracker.log({
                             "train mssim_remover": mssim_remover, 
-                            }, step=global_step)
+                            })
 
-                # Backpropagate
-                accelerator.backward(loss)
-                if accelerator.sync_gradients:
-                    params_to_clip = lora_layers
-                    accelerator.clip_grad_norm_(params_to_clip, args.max_grad_norm)
-                optimizer.step()
-                lr_scheduler.step()
-                optimizer.zero_grad()
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:

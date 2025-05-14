@@ -1,7 +1,7 @@
 bump
 manhole
 curb
-pit
+pothole
 puddle
 firehose
 hose
