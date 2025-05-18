@@ -12,10 +12,15 @@ import matplotlib.pyplot as plt
 
 import datasets
 import numpy as np
+from scipy.linalg import sqrtm
+
 import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
+from torch.nn.functional import adaptive_avg_pool2d
+
 import torchvision.transforms as T
+import torchvision.models as models_tvision
 from torchvision import transforms
 
 import transformers
@@ -197,6 +202,63 @@ def compute_ssim(img1, img2, win_size=3):
     return ssim_score
 
 
+def get_features(images, model, batch_size=64):
+    """
+    Извлекает признаки из изображений с помощью Inception-v3.
+    
+    Args:
+        images: Тензор изображений формы (N, 3, H, W).
+        model: Модель Inception-v3.
+        batch_size: Размер батча для обработки.
+    
+    Returns:
+        Массив признаков формы (N, 2048).
+    """
+    features = []
+    with torch.no_grad():
+        for i in range(0, len(images), batch_size):
+            batch = images[i:i + batch_size].cuda()  # Переносим батч на GPU
+            # Получаем признаки из блока Inception (avgpool)
+            batch_features = model(batch)[0]
+            # Если выход имеет форму (1, 2048, 1, 1), сжимаем его
+            if batch_features.size(2) != 1 or batch_features.size(3) != 1:
+                batch_features = adaptive_avg_pool2d(batch_features, (1, 1))
+            features.append(batch_features.cpu().numpy().reshape(batch_size, -1))
+    return np.concatenate(features, axis=0)
+
+
+# Функция для вычисления FID
+def compute_fid(real_images, generated_images, model, batch_size=64):
+    """
+    Вычисляет FID между реальными и сгенерированными изображениями.
+    
+    Args:
+        real_images: Тензор реальных изображений (N, 3, H, W).
+        generated_images: Тензор сгенерированных изображений (N, 3, H, W).
+        model: Модель Inception-v3.
+        batch_size: Размер батча.
+    
+    Returns:
+        FID (float).
+    """
+    # Извлекаем признаки
+    real_features = get_features(real_images, model, batch_size)
+    gen_features = get_features(generated_images, model, batch_size)
+    
+    # Вычисляем средние и ковариационные матрицы
+    mu_real, sigma_real = np.mean(real_features, axis=0), np.cov(real_features, rowvar=False)
+    mu_gen, sigma_gen = np.mean(gen_features, axis=0), np.cov(gen_features, rowvar=False)
+    
+    # Вычисляем FID
+    diff = mu_real - mu_gen
+    covmean = sqrtm(sigma_real.dot(sigma_gen))
+    if np.iscomplexobj(covmean):
+        covmean = covmean.real
+    
+    fid = np.sum(diff ** 2) + np.trace(sigma_real + sigma_gen - 2 * covmean)
+    return fid
+
+
 
 def log_validation(
     pipeline, 
@@ -221,6 +283,7 @@ def log_validation(
         autocast_ctx = torch.autocast(accelerator.device.type)
 
     # batch = {k: v.to(accelerator.device) for k, v in batch.items()}
+    # TODO: проверить картинки и маски к ним
     images = batch["pixel_values"]
     masks = batch["masks"]
     prompts = batch["text_prompts"]
@@ -238,9 +301,12 @@ def log_validation(
                 strength=1.0
             ).images[0]
             generated_images.append(inpaint_result)
+            #TODO: измерять только кропы
             ssim_list.append(compute_ssim(images[step], inpaint_result))
+
     # TODO: посмотреть почему пустой список
     mssim = np.mean(ssim_list)
+    print(f"ssim_list: {len(ssim_list)}, \n {ssim_list}")
     for tracker in accelerator.trackers:
         phase_name = "test" if is_final_validation else "validation"
         if tracker.name == "tensorboard":
@@ -795,7 +861,7 @@ def main():
         model = model._orig_mod if is_compiled_module(model) else model
         return model
     
-    # prepare pipe for PowerPaint
+    # prepare pipe for tuning
     pipe = prepare_pipe(args.pretrained_model_name_or_path)
 
     # Load scheduler, tokenizer and models.
@@ -1034,10 +1100,18 @@ def main():
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        # accelerator.init_trackers("test_custom_lora", config=vars(args))
-        accelerator.init_trackers("tune_augmentation", config=vars(args))
+        accelerator.init_trackers("test_custom_lora", config=vars(args))
+        # accelerator.init_trackers("tune_augmentation", config=vars(args))
         if args.report_to == "wandb":
             accelerator.trackers[0].tracker.define_metric("mean ssim", step_metric="global_step")
+
+
+
+    # Load pretrained Inception-v3 for FID metric
+    inception_model = models_tvision.inception_v3(pretrained=True, transform_input=False)
+    inception_model.eval() 
+    inception_model = inception_model.cuda()  
+
 
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -1243,7 +1317,7 @@ def main():
                 if tracker.name == "wandb":
                     tracker.log({
                         "train mssim": mssim, 
-                        # "train loss": train_loss, 
+                        "train loss": train_loss, 
                     })
 
                     if args.loss == "custom":
@@ -1256,8 +1330,9 @@ def main():
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                # accelerator.log({"train_loss": train_loss})
-                accelerator.log({"train_loss": train_loss}, step=global_step)
+                accelerator.log({"train_loss": train_loss})
+                # accelerator.log({"train_loss": train_loss}, step=step)
+                # accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
                 if global_step % args.checkpointing_steps == 0:
