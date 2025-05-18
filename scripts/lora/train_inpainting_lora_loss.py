@@ -239,7 +239,7 @@ def log_validation(
             ).images[0]
             generated_images.append(inpaint_result)
             ssim_list.append(compute_ssim(images[step], inpaint_result))
-
+    # TODO: посмотреть почему пустой список
     mssim = np.mean(ssim_list)
     for tracker in accelerator.trackers:
         phase_name = "test" if is_final_validation else "validation"
@@ -248,7 +248,7 @@ def log_validation(
             tracker.writer.add_images(phase_name, np_images, epoch, dataformats="NHWC")
         if tracker.name == "wandb":
             tracker.log({
-                    f"mean ssim": mssim, 
+                    f"val ssim": mssim, 
                     f"generated images": [ 
                             wandb.Image(gen_image, caption=f"{i}: {prompts[i]}") for i, gen_image in enumerate(generated_images)
                         ],
@@ -1226,18 +1226,7 @@ def main():
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss.item() / args.gradient_accumulation_steps
 
-                # for tracker in accelerator.trackers:
-                #     # TODO: add tensorboard 
-                #     if tracker.name == "wandb":
-                #         tracker.log({
-                #             "train mssim": mssim, 
-                #             "train loss": train_loss, 
-                #         })
 
-                #         if args.loss == "custom":
-                #             tracker.log({
-                #             "train mssim_remover": mssim_remover, 
-                #             })
 
                 # Backpropagate
                 accelerator.backward(loss)
@@ -1250,25 +1239,25 @@ def main():
 
 
             for tracker in accelerator.trackers:
-                    # TODO: add tensorboard 
-                    if tracker.name == "wandb":
-                        tracker.log({
-                            "train mssim": mssim, 
-                            "train loss": train_loss, 
-                        })
+                # TODO: add tensorboard 
+                if tracker.name == "wandb":
+                    tracker.log({
+                        "train mssim": mssim, 
+                        # "train loss": train_loss, 
+                    })
 
-                        if args.loss == "custom":
-                            tracker.log({
-                            "train mssim_remover": mssim_remover, 
-                            })
+                    if args.loss == "custom":
+                        tracker.log({
+                        "train mssim_remover": mssim_remover, 
+                        })
 
 
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                accelerator.log({"train_loss": train_loss})
-                # accelerator.log({"train_loss": train_loss}, step=global_step)
+                # accelerator.log({"train_loss": train_loss})
+                accelerator.log({"train_loss": train_loss}, step=global_step)
                 train_loss = 0.0
 
                 if global_step % args.checkpointing_steps == 0:
