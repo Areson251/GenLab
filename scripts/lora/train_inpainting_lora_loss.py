@@ -9,6 +9,10 @@ import shutil
 from pathlib import Path
 from contextlib import nullcontext
 import matplotlib.pyplot as plt
+from typing import Union, List
+import lpips
+from collections import defaultdict
+
 
 import datasets
 import numpy as np
@@ -18,6 +22,7 @@ import torch
 import torch.nn.functional as F
 import torch.utils.checkpoint
 from torch.nn.functional import adaptive_avg_pool2d
+from torchvision.transforms import ToPILImage
 
 import torchvision.transforms as T
 import torchvision.models as models_tvision
@@ -202,33 +207,88 @@ def compute_ssim(img1, img2, win_size=3):
     return ssim_score
 
 
-def get_features(images, model, batch_size=64):
+def prepare_input(image: Union[torch.Tensor, Image.Image, List[Image.Image]]) -> torch.Tensor:
+    """Конвертирует PIL Image или список Images в тензор нужного формата."""
+    preprocess = transforms.Compose([
+        transforms.Resize(299),
+        transforms.CenterCrop(299),
+        transforms.ToTensor(),
+        transforms.Normalize(mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]),
+    ])
+    
+    if isinstance(image, (list, tuple)):
+        # Если на вход подан список изображений
+        tensors = []
+        for img in image:
+            if isinstance(img, Image.Image):
+                img = preprocess(img.convert('RGB'))
+            elif isinstance(img, torch.Tensor):
+                if img.dim() == 3:
+                    img = img.unsqueeze(0)
+                if img.shape[1] == 1:  # Grayscale
+                    img = img.repeat(1, 3, 1, 1)
+            tensors.append(img)
+        return torch.cat(tensors, dim=0)
+    
+    elif isinstance(image, Image.Image):
+        # Одиночное PIL Image
+        return preprocess(image.convert('RGB')).unsqueeze(0)
+    
+    elif isinstance(image, torch.Tensor):
+        # Тензор (проверяем размерности)
+        if image.dim() == 3:
+            image = image.unsqueeze(0)
+        if image.shape[1] == 1:  # Grayscale → RGB
+            image = image.repeat(1, 3, 1, 1)
+        return image
+    
+    else:
+        raise TypeError("Input must be PIL Image, torch.Tensor or list of these")
+
+
+def get_features(
+    images: Union[torch.Tensor, Image.Image, List[Image.Image]], 
+    model: torch.nn.Module,
+    batch_size: int = 64
+) -> np.ndarray:
     """
-    Извлекает признаки из изображений с помощью Inception-v3.
+    Извлекает признаки из изображений (поддержка PIL/Tensor, grayscale/RGB).
     
     Args:
-        images: Тензор изображений формы (N, 3, H, W).
-        model: Модель Inception-v3.
-        batch_size: Размер батча для обработки.
-    
+        images: Входные данные (PIL Image, Tensor [N,C,H,W] или список PIL Images)
+        model: Модель Inception-v3
+        batch_size: Размер батча
+        
     Returns:
-        Массив признаков формы (N, 2048).
+        Массив признаков формы [N, 2048]
     """
+    # Подготовка входных данных
+    input_tensor = prepare_input(images)
+    
+    # Извлечение признаков
     features = []
     with torch.no_grad():
-        for i in range(0, len(images), batch_size):
-            batch = images[i:i + batch_size].cuda()  # Переносим батч на GPU
-            # Получаем признаки из блока Inception (avgpool)
-            batch_features = model(batch)[0]
-            # Если выход имеет форму (1, 2048, 1, 1), сжимаем его
-            if batch_features.size(2) != 1 or batch_features.size(3) != 1:
-                batch_features = adaptive_avg_pool2d(batch_features, (1, 1))
-            features.append(batch_features.cpu().numpy().reshape(batch_size, -1))
-    return np.concatenate(features, axis=0)
-
+        for i in range(0, len(input_tensor), batch_size):
+            batch = input_tensor[i:i+batch_size]
+            if torch.cuda.is_available():
+                batch = batch.cuda()
+            
+            batch_features = model(batch)
+            
+            # Обработка выхода Inception-v3
+            if isinstance(batch_features, tuple):
+                batch_features = batch_features[0]
+            
+            # Пулинг, если выход не [N, 2048, 1, 1]
+            if batch_features.dim() == 4:
+                batch_features = F.adaptive_avg_pool2d(batch_features, (1, 1))
+            
+            features.append(batch_features.cpu().reshape(len(batch), -1))
+    
+    return torch.cat(features, dim=0).numpy()
 
 # Функция для вычисления FID
-def compute_fid(real_images, generated_images, model, batch_size=64):
+def compute_fid(real_image, generated_image, model, batch_size=1):
     """
     Вычисляет FID между реальными и сгенерированными изображениями.
     
@@ -242,8 +302,8 @@ def compute_fid(real_images, generated_images, model, batch_size=64):
         FID (float).
     """
     # Извлекаем признаки
-    real_features = get_features(real_images, model, batch_size)
-    gen_features = get_features(generated_images, model, batch_size)
+    real_features = get_features(real_image, model, batch_size)
+    gen_features = get_features(generated_image, model, batch_size)
     
     # Вычисляем средние и ковариационные матрицы
     mu_real, sigma_real = np.mean(real_features, axis=0), np.cov(real_features, rowvar=False)
@@ -259,12 +319,91 @@ def compute_fid(real_images, generated_images, model, batch_size=64):
     return fid
 
 
+def compute_lpips(img1, img2, loss_fn):
+    """Вычисляет LPIPS между двумя изображениями.
+       Поддерживает PIL.Image, torch.Tensor или numpy.ndarray."""
+    
+    # Преобразуем оба изображения в тензоры [0,1] (C, H, W)
+    if not isinstance(img1, torch.Tensor):
+        if isinstance(img1, Image.Image):
+            img1 = transforms.ToTensor()(img1)
+        elif isinstance(img1, np.ndarray):
+            img1 = torch.from_numpy(img1).permute(2, 0, 1).float() / 255.0
+        else:
+            raise TypeError("img1 должен быть PIL.Image, torch.Tensor или numpy.ndarray")
+    
+    if not isinstance(img2, torch.Tensor):
+        if isinstance(img2, Image.Image):
+            img2 = transforms.ToTensor()(img2)
+        elif isinstance(img2, np.ndarray):
+            img2 = torch.from_numpy(img2).permute(2, 0, 1).float() / 255.0
+        else:
+            raise TypeError("img2 должен быть PIL.Image, torch.Tensor или numpy.ndarray")
+    
+    # LPIPS ожидает тензоры в [0,1] и формат (N, C, H, W)
+    img1 = img1.unsqueeze(0)  # (1, C, H, W)
+    img2 = img2.unsqueeze(0)  # (1, C, H, W)
+    
+    # Вычисление LPIPS
+    with torch.no_grad():
+        distance = loss_fn(img1, img2)
+    
+    return distance.item()
+
+
+# def compute_lpips(img1, img2, loss_fn):
+#     """Вычисляет LPIPS между двумя изображениями. Автоматически обрабатывает:
+#        - PIL.Image (RGB/RGBA)
+#        - torch.Tensor (C, H, W)
+#        - numpy.ndarray (H, W, C)
+#     """
+#     # Преобразуем оба изображения в тензоры [0, 1] (C, H, W)
+#     def _to_tensor(img):
+#         if isinstance(img, torch.Tensor):
+#             tensor = img
+#         elif isinstance(img, Image.Image):
+#             # Если изображение RGBA, конвертируем в RGB
+#             if img.mode == 'RGBA':
+#                 img = img.convert('RGB')
+#             tensor = transforms.ToTensor()(img)
+#         elif isinstance(img, np.ndarray):
+#             # Если массив RGBA (H, W, 4), оставляем только RGB
+#             if img.shape[-1] == 4:
+#                 img = img[..., :3]
+#             tensor = torch.from_numpy(img).permute(2, 0, 1).float() / 255.0
+#         else:
+#             raise TypeError("Не поддерживаемый тип. Ожидается PIL.Image, torch.Tensor или numpy.ndarray")
+        
+#         # Проверяем, что тензор имеет 3 канала (RGB)
+#         if tensor.shape[0] not in [1, 3]:
+#             raise ValueError(f"Неправильное число каналов: {tensor.shape[0]}. Ожидается 1 (grayscale) или 3 (RGB).")
+        
+#         # Если grayscale (1 канал), дублируем в RGB
+#         if tensor.shape[0] == 1:
+#             tensor = torch.cat([tensor] * 3, dim=0)
+        
+#         return tensor
+
+#     img1 = _to_tensor(img1)
+#     img2 = _to_tensor(img2)
+
+#     # LPIPS ожидает (N, C, H, W), где N=1 (batch size)
+#     img1 = img1.unsqueeze(0)
+#     img2 = img2.unsqueeze(0)
+    
+#     # Вычисляем LPIPS (без градиентов)
+#     with torch.no_grad():
+#         distance = loss_fn(img1, img2)
+    
+#     return distance.item() 
+
 
 def log_validation(
     pipeline, 
     batch, 
     accelerator, 
     epoch, 
+    loss_fn,
     args,
     is_final_validation=False,
 ):
@@ -288,46 +427,65 @@ def log_validation(
     masks = batch["masks"]
     prompts = batch["text_prompts"]
 
+    # generated_images = []
+    # ssim_list = []
+    # lpips_list = []
+
     generated_images = []
-    ssim_list = []
-    for step in range(args.num_validation_images):
+    metrics = {
+        'ssim': [],
+        'lpips': [],
+    }
+
+    # for step in range(args.num_validation_images):
+    for i in range(len(prompts)):
         with autocast_ctx:
             inpaint_result = pipeline(
                 num_inference_steps=20,
-                prompt=prompts[step],
-                image=images[step],
-                mask_image=masks[step],
+                prompt=prompts[i],
+                image=images[i],
+                mask_image=masks[i],
                 guidance_scale=0.7,
                 strength=1.0
             ).images[0]
             generated_images.append(inpaint_result)
-            #TODO: измерять только кропы
-            ssim_list.append(compute_ssim(images[step], inpaint_result))
 
-    # TODO: посмотреть почему пустой список
-    mssim = np.mean(ssim_list)
-    print(f"ssim_list: {len(ssim_list)}, \n {ssim_list}")
+            # lpips_list.append(compute_lpips(images[step], inpaint_result, loss_fn))
+
+            #TODO: добавить измерения на только кропах
+            # ssim_list.append(compute_ssim(images[step], inpaint_result))
+            metrics['ssim'].append(compute_ssim(images[i], inpaint_result))
+            metrics['lpips'].append(compute_lpips(images[i], inpaint_result, loss_fn))
+
+    mssim = np.mean(metrics['ssim'])
+    mlpips = np.mean(metrics['lpips'])
     for tracker in accelerator.trackers:
         phase_name = "test" if is_final_validation else "validation"
         if tracker.name == "tensorboard":
             np_images = np.stack([np.asarray(img) for img in generated_images])
             tracker.writer.add_images(phase_name, np_images, epoch, dataformats="NHWC")
         if tracker.name == "wandb":
-            tracker.log({
-                    f"val ssim": mssim, 
-                    f"generated images": [ 
-                            wandb.Image(gen_image, caption=f"{i}: {prompts[i]}") for i, gen_image in enumerate(generated_images)
-                        ],
-                    f"original images": [ 
-                            wandb.Image(image, caption=f"{i}: {prompts[i]}") for i, image in enumerate(images)
-                        ],
-                    f"masks images": [ 
-                            wandb.Image(mask.numpy().astype(np.uint8), caption=f"{i}: {prompts[i]}") for i, mask in enumerate(masks)
-                        ],
-                }
-            )
+            firehose_indices = [i for i, prompt in enumerate(prompts) if "firehose" in prompt.lower()]
+            random_idx = random.choice(firehose_indices)
+            # random_idx = torch.randint(0, len(generated_images), (1,)).item()
+            accelerator.log({
+                    "val ssim": mssim, 
+                    "val lpips": mlpips, 
+                    "generated image": wandb.Image(
+                        generated_images[random_idx], 
+                        caption=f"Gen {random_idx}: {prompts[random_idx]}"
+                    ),
+                    "original image": wandb.Image(
+                        images[random_idx].cpu().numpy().transpose(1, 2, 0), 
+                        caption=f"Orig {random_idx}: {prompts[random_idx]}"
+                    ),
+                    "mask image": wandb.Image(
+                        masks[random_idx].cpu().numpy().squeeze().astype(np.uint8) * 255, 
+                        caption=f"Mask {random_idx}: {prompts[random_idx]}"
+                    ),
+                })
 
-    return ssim_list, generated_images
+    return metrics['ssim'], generated_images
 
 
 class customDataset(Dataset):
@@ -393,7 +551,10 @@ class customDataset(Dataset):
         image_name = str(image_path).split("/")[-1]
         imgs = self.metainfo.dataset["images"]
 
-        img_id = [d["id"] for d in imgs if d["file_name"]==image_name][0]
+        try:
+            img_id = [d["id"] for d in imgs if d["file_name"]==image_name][0]
+        except:
+            print(f"file_name: {image_name}\nimgs len: {len(imgs)}\nimage_path: {image_path}")
         image_data = self.metainfo.loadImgs(ids=[img_id])[0]
         example["image_data"] = image_data
 
@@ -453,6 +614,36 @@ class customDataset(Dataset):
             ).input_ids
 
         return example
+    
+
+class BalancedValBatchSampler(torch.utils.data.Sampler):
+    def __init__(self, dataset, batch_size):
+        self.dataset = dataset
+        self.batch_size = batch_size
+        self.class_indices = self._get_class_indices()
+        
+    def _get_class_indices(self):
+        # Предполагаем, что dataset имеет метод get_classes() или аналогичный
+        class_indices = defaultdict(list)
+        for idx, example in enumerate(self.dataset['annotations']):
+            class_id = example["category_id"]  
+            img_id = example['image_id']
+            class_indices[class_id].append(img_id)
+        return class_indices
+        
+    def __iter__(self):
+        # Для каждого батча выбираем по одному примеру из каждого класса
+        all_classes = list(self.class_indices.keys())
+        for _ in range(len(self)):
+            batch = []
+            for class_id in all_classes:
+                indices = self.class_indices[class_id]
+                batch.append(random.choice(indices))
+            yield batch
+            
+    def __len__(self):
+        # Количество батчей - максимальное количество примеров в каком-либо классе
+        return max(len(indices) for indices in self.class_indices.values())
 
 
 def prepare_pipe(pretrained_model_name_or_path="runwayml/stable-diffusion-inpainting"):
@@ -1041,6 +1232,8 @@ def main():
         
         batch = {"input_ids": input_ids, "pixel_values": pixel_values, "masks": masks, "masked_images": masked_images, "text_prompts": text_prompts}
         return batch
+    
+    
 
     # DataLoaders creation:
     train_dataloader = torch.utils.data.DataLoader(
@@ -1052,11 +1245,13 @@ def main():
     )
 
     if args.annotation_val_path:
+        val_sampler = BalancedValBatchSampler(val_annotation.dataset, batch_size=args.num_validation_images)
         val_dataloader = torch.utils.data.DataLoader(
             val_dataset,
-            shuffle=True,
+            # shuffle=True,
             collate_fn=collate_fn,
-            batch_size=args.num_validation_images,
+            batch_sampler=val_sampler,
+            # batch_size=args.num_validation_images,
             # num_workers=args.dataloader_num_workers,
         )
 
@@ -1107,11 +1302,8 @@ def main():
 
 
 
-    # Load pretrained Inception-v3 for FID metric
-    inception_model = models_tvision.inception_v3(pretrained=True, transform_input=False)
-    inception_model.eval() 
-    inception_model = inception_model.cuda()  
-
+    # Load pretrained vgg for lpips_fn metric
+    lpips_fn = lpips.LPIPS(net='vgg')  # или 'alex'
 
     # Train!
     total_batch_size = args.train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
@@ -1189,6 +1381,11 @@ def main():
         unet.train()
 
         train_loss = 0.0
+        if args.loss == "custom":
+            train_obj_loss = 0.0
+            train_remover_loss = 0.0
+
+
         for step, batch in enumerate(train_dataloader):
             with accelerator.accumulate(unet):
                 # Convert images to latent space
@@ -1249,6 +1446,8 @@ def main():
                 # Predict the noise residual and compute loss
                 model_pred = unet(latent_model_input, timesteps, encoder_hidden_states, return_dict=False)[0]
                 
+
+
                 # === NEW LOSS WITH unet_remover ===
                 if args.loss == "custom":
                     n = latent_model_input.shape[0]
@@ -1267,6 +1466,15 @@ def main():
                     # loss_empty = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - gt||
 
                     loss = alpha * loss_obj + beta / (loss_empty + gamma)
+
+                    train_obj_loss += loss_obj
+                    train_remover_loss += loss_empty
+
+                    mssim_remover = compute_ssim(remover_pred.float(), model_pred.float())
+                    mssim_remover = mssim_remover.mean()
+
+                    # mlpips_remover = compute_lpips(remover_pred.float(), model_pred.float(), lpips_fn)
+                    # mlpips_remover = mlpips_remover.mean()
 
                 else:
                     if args.snr_gamma is None:
@@ -1292,14 +1500,13 @@ def main():
                 mssim = compute_ssim(model_pred.float(), target.float())
                 mssim = mssim.mean()
 
-                if args.loss == "custom":
-                    mssim_remover = compute_ssim(remover_pred.float(), model_pred.float())
-                    mssim_remover = mssim_remover.mean()
+                # mlpips = compute_lpips(model_pred.float(), target.float(), lpips_fn)
+                # mlpips = mlpips.mean()
+
 
                 # Gather the losses across all processes for logging (if we use distributed training).
                 avg_loss = accelerator.gather(loss.repeat(args.train_batch_size)).mean()
                 train_loss += avg_loss.item() / args.gradient_accumulation_steps
-
 
 
                 # Backpropagate
@@ -1312,27 +1519,27 @@ def main():
                 optimizer.zero_grad()
 
 
-            for tracker in accelerator.trackers:
-                # TODO: add tensorboard 
-                if tracker.name == "wandb":
-                    tracker.log({
-                        "train mssim": mssim, 
-                        "train loss": train_loss, 
-                    })
-
-                    if args.loss == "custom":
-                        tracker.log({
-                        "train mssim_remover": mssim_remover, 
-                        })
-
-
             # Checks if the accelerator has performed an optimization step behind the scenes
             if accelerator.sync_gradients:
                 progress_bar.update(1)
                 global_step += 1
-                accelerator.log({"train_loss": train_loss})
-                # accelerator.log({"train_loss": train_loss}, step=step)
-                # accelerator.log({"train_loss": train_loss}, step=global_step)
+
+                accelerator.log({"train loss": train_loss,
+                                 "train object mssim": mssim,
+                                #  "train object mlpips": mlpips,
+                                 }, step=global_step)
+
+                if args.loss == "custom":
+                    accelerator.log({
+                    "train mssim_remover": mssim_remover, 
+                    # "train mlpips_remover": mlpips_remover, 
+                    "train object loss": train_obj_loss, 
+                    "train remover loss": train_remover_loss, 
+                    }, step=global_step)
+
+                    train_obj_loss = 0.0
+                    train_remover_loss = 0.0
+
                 train_loss = 0.0
 
                 if global_step % args.checkpointing_steps == 0:
@@ -1391,7 +1598,7 @@ def main():
                 )
 
                 batch = next(iter(val_dataloader))
-                log_validation(pipeline, batch, accelerator, epoch, args)
+                log_validation(pipeline, batch, accelerator, epoch, lpips_fn, args)
 
                 del pipeline
                 torch.cuda.empty_cache()
@@ -1425,7 +1632,7 @@ def main():
 
             batch = next(iter(val_dataloader))
             # run inference
-            log_validation(pipeline, batch, accelerator, epoch, args, is_final_validation=True)
+            log_validation(pipeline, batch, accelerator, epoch, lpips_fn, args, is_final_validation=True)
 
 
     accelerator.end_training()
