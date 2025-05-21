@@ -135,12 +135,12 @@ class AugmentDataset():
                 "supercategory": ""
             })
 
-    def load_mask(self, masks_path):
+    def load_mask(self, masks_path, use_bboxes=False):
         mask = Image.open(masks_path).convert('L')
-        if random.random() < self.epsilon:
-            mask, angle = self.random_rotate(mask)
-            self.logger.info(f"Rotate mask angle: {angle}")
-        object_width, object_height, cropped_object = self.get_masked_object(mask)
+        # if random.random() < self.epsilon:
+        #     mask, angle = self.random_rotate(mask)
+        #     self.logger.info(f"Rotate mask angle: {angle}")
+        object_width, object_height, cropped_object = self.get_masked_object(mask, use_bboxes)
         self.logger.info(f"Find object dimensions: {object_width}x{object_height}")
 
         return mask, object_width, object_height, cropped_object
@@ -230,7 +230,7 @@ class AugmentDataset():
         
         return image, background_mask
 
-    def get_masked_object(self, image):
+    def get_masked_object(self, image, use_bboxes=False):
         image_array = np.array(image)
 
         object_mask = (image_array > 200)
@@ -244,6 +244,13 @@ class AugmentDataset():
 
         cropped_image = image.crop((min_x, min_y, max_x, max_y))
         cropped_image = ImageOps.expand(cropped_image, border=self.padding, fill='black')
+
+        if use_bboxes:
+            # fill all to 255
+            cropped_image = Image.new('L', cropped_image.size, color=255)
+
+        # DEBUG
+        cropped_image.save("mask.png")
 
         return width, height, cropped_image
     
@@ -311,8 +318,8 @@ class AugmentDataset():
                        random_x, random_y, 
                        box, prompt):
 
-        category_id = 1
-        # category_id = [v for v in self.annotation["categories"] if v["name"] == prompt][0]["id"]
+        # category_id = 1
+        category_id = [v for v in self.annotation["categories"] if v["name"] == prompt][0]["id"]
         mask_image = Image.new("L", (image.size[0], image.size[1]), 0)
         mask_image.paste(cropped_resized_object, (random_x, random_y))
                 
@@ -371,7 +378,7 @@ class AugmentDataset():
 
     def generate_object(self, image, background_mask, 
                         object_height, object_width, 
-                        depth_map, cropped_object, prompt):
+                        depth_map, cropped_object, prompt, use_crops):
         
         depth_map = self.prepare_depth(depth_map)
         valid_coordinates, background_object_coords = self.get_valid_coordinates(background_mask, object_height, object_width, depth_map)
@@ -388,7 +395,7 @@ class AugmentDataset():
         # self.draw_point_and_save(background_mask, random_coordinates, f"{self.output_path}/{self.filename_img}_background_mask.png")
         # self.draw_valid_coordinates_and_save(background_mask, valid_coordinates, f"{self.output_path}/{self.filename_img}_valid_coordinates.png")
         # self.draw_valid_coordinates_and_save(background_mask, background_object_coords, f"{self.output_path}/{self.filename_img}_background_object_coords.png")
-        self.save_depth(depth_map, f"{self.output_path}/{self.filename_img}/depth.png")
+        # self.save_depth(depth_map, f"{self.output_path}/{self.filename_img}/depth.png")
 
         # resize mask due to depth map
         resized_width = int(object_width * resize_coeff)
@@ -398,13 +405,25 @@ class AugmentDataset():
         # get box with mask (log to file [x, y, w, h])
         box = [int(random_x), int(random_y), int(resized_width), int(resized_height)]
         self.logger.info(f"Box: {box}")
-        cropped_image = image.crop((random_x, random_y, random_x+resized_width, random_y+resized_height))
         detailed_prompt = f"A highly detailed and realistic depiction of {prompt}, featuring sharp details, natural lighting, and a clean, well-balanced composition."
+        
+        if use_crops:
+            input_image = image.crop((random_x, random_y, random_x+resized_width, random_y+resized_height))
+            masked_image = cropped_resized_object.copy()
+        else:
+            masked_image = Image.new('L', image.size, color=0)
+            masked_image.paste(cropped_resized_object, (random_x, random_y))
+            # masked_image.save("test.png")
+            input_image = image.copy()   
+
+        # DEBUG
+        masked_image.save("masked_image.png")
+        input_image.save("input_image.png")
         
         # inpainting
         start_generating_time = time.time()
         augmented_image = self.diffusion_pipe(
-            cropped_image, cropped_resized_object, 
+            input_image, masked_image, 
             detailed_prompt, None, image.size[0], image.size[1],
             self.iter_number, self.guidance_scale
         )
@@ -413,20 +432,27 @@ class AugmentDataset():
         self.avg_generation_time += generation_time
 
         # debug
-        augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image_{prompt}.png")
+        # augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image_{prompt}.png")
+        augmented_image.save(f"augmented_image.png")
         
         self.logger.info(f"Prompt: {prompt}")
         self.logger.info(f"Generation time: {generation_time}")
 
-        resized_augmented_image = augmented_image.resize((resized_width, resized_height))
+        if use_crops:
+            resized_augmented_image = augmented_image.resize((resized_width, resized_height))
+            augmented_image = image.copy()
+            augmented_image.paste(resized_augmented_image, (random_x, random_y))
+            new_image = augmented_image
 
-        augmented_image = image.copy()
-        augmented_image.paste(resized_augmented_image, (random_x, random_y))
+            augmented_mask = background_mask.copy()
+            augmented_mask.paste(masked_image, (random_x, random_y))  
+        else:
+            new_image = augmented_image.resize((image.size[0], image.size[1]))
+            # resized_augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image_{prompt}.png")
+        
+        new_image.save(f"new_image.png")
 
-        augmented_mask = background_mask.copy()
-        augmented_mask.paste(cropped_resized_object, (random_x, random_y))  
-
-        return augmented_image, cropped_resized_object, random_x, random_y, box
+        return new_image, masked_image, random_x, random_y, box
     
     def augment_dataset(self):
         self.logger.info("Start generating")
@@ -455,14 +481,14 @@ class AugmentDataset():
             # get random pseudo mask (NOW USE ONLY ONE MASK)
             random_mask_path = random.choice(self.target_masks)
             self.logger.info(f"Load random mask: {random_mask_path}")
-            target_mask, object_width, object_height, cropped_object = self.load_mask(random_mask_path)
+            target_mask, object_width, object_height, cropped_object = self.load_mask(random_mask_path, args.use_bboxes)
 
             # generate scene 
             if self.synth_scenes:
                 scene = self.generate_scene(depth_map)
+                scene.save(f"{self.output_path}/{self.filename_img}/scene.png")
             else:
                 scene = image 
-            scene.save(f"{self.output_path}/{self.filename_img}/scene.png")
 
             # generate object
             for i, prompt in enumerate(self.prompts):
@@ -470,7 +496,7 @@ class AugmentDataset():
                     random_x, random_y, box = self.generate_object(
                         scene, background_mask, 
                         object_height, object_width, 
-                        depth_map, cropped_object, prompt)
+                        depth_map, cropped_object, prompt, args.use_crops)
 
                 if not augmented_image:
                     self.add_image_info(f"{self.filename_img}_{prompt}.png", scene)
@@ -516,6 +542,8 @@ if __name__ == "__main__":
     parser.add_argument("--iter_number", type=int, default="20")
     parser.add_argument("--guidance_scale", type=float, default="0.7")
     parser.add_argument("--seed", type=float, default="0")
+    parser.add_argument("--use_crops", type=bool, default=False)
+    parser.add_argument("--use_bboxes", type=bool, default=False)
     parser.add_argument("--synth_scenes", type=bool, default=False)
     parser.add_argument("--scene_prompts_path", type=str, default="Realistic image",
                         help="If --synth_scenes=True, use this arg to customize scene generation")

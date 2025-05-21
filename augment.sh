@@ -26,30 +26,95 @@
 #             --output_path="datasets/original/TAOMR/val_objects" 
 
 
- 
-declare -a ckpt_arr=(8 10)
-# declare -a ckpt_arr=(2 4 6 8 10)
-for ckpt in "${ckpt_arr[@]}"; do
-    echo "START ckpt ${ckpt} GENERATION"
+python augment_dataset.py \
+        --images_path="datasets/original/YCOR/val/images" \
+        --annotation_path="datasets/original/YCOR/val/masks_road" \
+        --masks_path="custom_datasets/target_masks" \
+        --prompts_path="prompts/taomr_objects_augm.txt" \
+        --output_path="tuning_exps/sd2_boxes/YCOR.augmented_gs-5_ckpt-taomr_9obj_mse_3000" \
+        --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+        --lora_chkpt="model_output/lora_mse_taomr_9_objs_fixval/checkpoint-3000" \
+        --padding=20 \
+        --guidance_scale=5 \
+        --device="cuda:1" \
+        --use_crops=True \
+        --seed=0 
 
-    declare -a gs_arr=(0.7 1 2 3)
-    for gs in "${gs_arr[@]}"; do  
-        echo "START GS ${gs} GENERATION"
-        python augment_dataset.py \
-                --images_path="custom_datasets/scenes/pothole_scenes" \
-                --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
-                --masks_path="custom_datasets/target_masks" \
-                --prompts_path="prompts/taomr_objects.txt" \
-                --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_small_custom_${ckpt}" \
-                --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-                --lora_chkpt="model_output/lora_custom_taomr/checkpoint-$((ckpt*1000))" \
-                --padding=20 \
-                --guidance_scale=${gs} \
-                --device="cuda:1" \
-                --seed=0 
-        done
-    done
-echo "IMAGES GENERATED"
+
+ 
+# declare -a ckpt_arr=(8 10)
+# declare -a ckpt_arr=(5 10 15 20 25 30 35 40)
+# for ckpt in "${ckpt_arr[@]}"; do
+#     echo "START ckpt ${ckpt} GENERATION"
+
+#     declare -a gs_arr=(0.7 3 5)
+#     for gs in "${gs_arr[@]}"; do  
+#         echo "START GS ${gs} GENERATION"
+#         python augment_dataset.py \
+#                 --images_path="custom_datasets/scenes/pothole_scenes" \
+#                 --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
+#                 --masks_path="custom_datasets/target_masks" \
+#                 --prompts_path="prompts/taomr_objects.txt" \
+#                 --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_9obj_loss2_notcrops_${ckpt}" \
+#                 --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+#                 --lora_chkpt="model_output/lora_loss2_taomr_9_objs/checkpoint-$((ckpt*100))" \
+#                 --padding=20 \
+#                 --guidance_scale=${gs} \
+#                 --device="cuda:1" \
+#                 --use_crops=True \
+#                 --use_bboxes=False \
+#                 --seed=0 
+#         done
+#     done
+# echo "IMAGES GENERATED"
+
+
+# declare -a ckpt_arr=(5 10 15 20 25 30 35 40)
+# for ckpt in "${ckpt_arr[@]}"; do
+#     echo "START ckpt ${ckpt} GENERATION"
+
+#     declare -a gs_arr=(0.7 3 5)
+#     for gs in "${gs_arr[@]}"; do  
+#         echo "START GS ${gs} GENERATION"
+#         python augment_dataset.py \
+#                 --images_path="custom_datasets/scenes/pothole_scenes" \
+#                 --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
+#                 --masks_path="custom_datasets/target_masks" \
+#                 --prompts_path="prompts/taomr_objects.txt" \
+#                 --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_9obj_custom_notcrops_${ckpt}" \
+#                 --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+#                 --lora_chkpt="model_output/lora_custom_taomr_9_objs_fixval/checkpoint-$((ckpt*100))" \
+#                 --padding=0 \
+#                 --guidance_scale=${gs} \
+#                 --device="cuda:1" \
+#                 --seed=0 
+#         done
+#     done
+# echo "IMAGES GENERATED"
+
+
+# declare -a ckpt_arr=(5 10 15 20 25 30 35 40)
+# for ckpt in "${ckpt_arr[@]}"; do
+#     echo "START ckpt ${ckpt} GENERATION"
+
+#     declare -a gs_arr=(0.7 3 5)
+#     for gs in "${gs_arr[@]}"; do  
+#         echo "START GS ${gs} GENERATION"
+#         python augment_dataset.py \
+#                 --images_path="custom_datasets/scenes/pothole_scenes" \
+#                 --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
+#                 --masks_path="custom_datasets/target_masks" \
+#                 --prompts_path="prompts/taomr_objects.txt" \
+#                 --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-${gs}_ckpt-taomr_9obj_mse_${ckpt}" \
+#                 --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+#                 --lora_chkpt="model_output/lora_mse_taomr_9_objs_fixval/checkpoint-$((ckpt*100))" \
+#                 --padding=20 \
+#                 --guidance_scale=${gs} \
+#                 --device="cuda:1" \
+#                 --seed=0 
+#         done
+#     done
+# echo "IMAGES GENERATED"
 
 # declare -a gs_arr=(0.7 1 2 3)
 # for gs in "${gs_arr[@]}"; do 

@@ -1,11 +1,7 @@
-bump
-manhole
-curb
 pothole
 puddle
+manhole
 firehose
-hose
-rail_track
-wire
 catch_basin
 poop
+bump

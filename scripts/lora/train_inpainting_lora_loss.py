@@ -1295,8 +1295,8 @@ def main():
     # We need to initialize the trackers we use, and also store our configuration.
     # The trackers initializes automatically on the main process.
     if accelerator.is_main_process:
-        accelerator.init_trackers("test_custom_lora", config=vars(args))
-        # accelerator.init_trackers("tune_augmentation", config=vars(args))
+        # accelerator.init_trackers("test_custom_lora", config=vars(args))
+        accelerator.init_trackers("tune_augmentation", config=vars(args))
         if args.report_to == "wandb":
             accelerator.trackers[0].tracker.define_metric("mean ssim", step_metric="global_step")
 
@@ -1359,7 +1359,9 @@ def main():
 
         # Сreate the input text condition for the unet_remover
         remover_prompts = [
-            "Remove the masked object and seamlessly blend the background. Match surrounding textures, colors, and lighting for a natural and realistic appearance. No visible artifacts or distortions."
+            # "Remove the masked object and seamlessly blend the background. Match surrounding textures, colors, and lighting for a natural and realistic appearance. No visible artifacts or distortions."
+            "Remove all objects from the masked area and reconstruct the background seamlessly, matching the original style, lighting, and textures. Ensure no visible artifacts, distortions, or inconsistencies—make the edit look natural and untouched."
+
         ] # * args.train_batch_size
 
         remover_text_inputs = tokenizer(
@@ -1446,6 +1448,24 @@ def main():
                 # Predict the noise residual and compute loss
                 model_pred = unet(latent_model_input, timesteps, encoder_hidden_states, return_dict=False)[0]
                 
+                # # DEBUG
+                # alpha_cumprod = noise_scheduler.alphas_cumprod[999]
+                # # alpha_cumprod = noise_scheduler.alphas_cumprod[timesteps[0]]
+                # clean_latents = (noisy_latents - model_pred * (1 - alpha_cumprod.sqrt())) / alpha_cumprod.sqrt()
+                # decoded_images = vae.decode(clean_latents / vae.config.scaling_factor).sample
+                # # Convert to PIL images
+                # decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
+                # decoded_images = decoded_images.detach().cpu().permute(0, 2, 3, 1).numpy()
+                # decoded_images = (decoded_images * 255).round().astype("uint8")
+                # decoded_images = [Image.fromarray(image) for image in decoded_images]
+                # decoded_images[0].save("output_pred.png")
+
+                # mask_np = mask.squeeze().cpu().numpy() 
+                # if mask_np.max() <= 1.0:
+                #     mask_np = (mask_np * 255).astype(np.uint8)
+
+                # mask_image = Image.fromarray(mask_np)
+                # mask_image.save("output_mask.png")
 
 
                 # === NEW LOSS WITH unet_remover ===
@@ -1456,16 +1476,39 @@ def main():
                     with torch.no_grad():    
                         remover_pred = unet_remover(latent_model_input, timesteps, remover_encoder_hidden_states_input, return_dict=False)[0]
 
+                    #     # DEBUG
+                    #     alpha_cumprod = noise_scheduler.alphas_cumprod[999]
+                    #     # alpha_cumprod = noise_scheduler.alphas_cumprod[timesteps[0]]
+                    #     clean_latents = (noisy_latents - remover_pred * (1 - alpha_cumprod.sqrt())) / alpha_cumprod.sqrt()
+                    #     decoded_images = vae.decode(clean_latents / vae.config.scaling_factor).sample
+                    #     # Convert to PIL images
+                    #     decoded_images = (decoded_images / 2 + 0.5).clamp(0, 1)
+                    #     decoded_images = decoded_images.detach().cpu().permute(0, 2, 3, 1).numpy()
+                    #     decoded_images = (decoded_images * 255).round().astype("uint8")
+                    #     decoded_images = [Image.fromarray(image) for image in decoded_images]
+                    # decoded_images[0].save("output_removed.png")
+
                     # Calculate the custom loss 
                     alpha = args.loss_alpha 
                     beta = args.loss_beta 
                     gamma = args.loss_gamma 
 
                     loss_obj = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - gt||
-                    loss_empty = F.mse_loss(model_pred.float(), remover_pred.float(), reduction="mean")  # ||𝜖_{obj} - 𝜖_{empt}||
-                    # loss_empty = F.mse_loss(remover_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{empt} - gt||
+                    # loss_empty = F.mse_loss(model_pred.float(), remover_pred.float(), reduction="mean") # ||𝜖_{obj} - 𝜖_{empt}||
+                    # loss_empty = F.mse_loss(model_pred.float(), remover_pred.float(), reduction="mean") + gamma  # ||𝜖_{obj} - 𝜖_{empt}||
+                    loss_empty = F.mse_loss(
+                                model_pred.float() * mask,  # Учитываем только маскированную область
+                                remover_pred.float() * mask,
+                                reduction="sum"  
+                            ) / (mask.sum() + 1e-6) + gamma
+                    
+                    loss_empty = torch.clamp(loss_empty, max=0.05)
 
-                    loss = alpha * loss_obj + beta / (loss_empty + gamma)
+                    loss = alpha * loss_obj + beta / loss_empty
+                    # if global_step > 100:                 
+                    #     loss = alpha * loss_obj + beta / loss_empty
+                    # else:
+                    #     loss = loss_obj
 
                     train_obj_loss += loss_obj
                     train_remover_loss += loss_empty

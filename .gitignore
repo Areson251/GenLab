@@ -21,8 +21,12 @@ normals_exps/
 custom_datasets/pothole_0
 custom_datasets/pothole_0.json
 tuning_exps/
+runs/
 
 custom_datasets/INSTSnowRoadDetection
 augmented_dataset*
 
 *.log
+
+
+*.pt

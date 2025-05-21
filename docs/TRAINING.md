@@ -75,7 +75,7 @@ accelerate launch --main_process_port=12553 scripts/lora/train_inpainting_lora_l
 
 
 
-accelerate launch --main_process_port=12562 scripts/lora/train_inpainting_lora_loss.py \
+accelerate launch --main_process_port=12565 scripts/lora/train_inpainting_lora_loss.py \
   --pretrained_model_name_or_path="stabilityai/stable-diffusion-2-inpainting" \
   --instance_data_dir="datasets/original/TAOMR/train_objects_copy" \
   --annotation_path="datasets/original/TAOMR/train_9_objs_copy.json" \
@@ -86,17 +86,17 @@ accelerate launch --main_process_port=12562 scripts/lora/train_inpainting_lora_l
   --resolution="512" \
   --train_batch_size="4" \
   --gradient_accumulation_steps="1" \
-  --output_dir="model_output/lora_mse_taomr_9_objs" \
-  --max_train_steps="2000" \
+  --output_dir="model_output/lora_loss2_taomr_9_objs" \
+  --max_train_steps="4000" \
   --learning_rate="1e-05" \
   --max_grad_norm="1" \
   --lr_scheduler="cosine" \
   --lr_warmup_steps="0" \
   --checkpointing_steps="500" \
   --report_to="wandb" \
-  --loss="mse" \
-  --loss_alpha="0.7" \
-  --loss_beta="0.3" \
+  --loss="custom" \
+  --loss_alpha="0.85" \
+  --loss_beta="0.15" \
   --seed="25" 
 
 
