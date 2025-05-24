@@ -112,10 +112,10 @@ def coco_to_yolo(images_dir, labels_json, output_dir, class_names_file=None, res
 # output_dir = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_mse/labels/val'
 
 
-images_dir = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_mse/images/val'
-labels_json = '/home/docker_diffdepth/diff_depth_new/tuning_exps/sd2_boxes/YCOR.augmented_gs-5_ckpt-taomr_9obj_mse_3000/annotation.json'
+images_dir = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_loss-umasked-1500/images/train_objects_copy'
+labels_json = '/home/docker_diffdepth/diff_depth_new/tuning_exps/sd2_boxes/YCOR.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_1500/annotation.json'
 class_names_file = '/home/docker_diffdepth/diff_depth_new/datasets/original/TAOMR/obj.names'  # optional
-output_dir = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_mse/labels/val'
+output_dir = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_loss-umasked-1500/labels/train_objects_copy'
 
 
 coco_to_yolo(

@@ -417,8 +417,8 @@ class AugmentDataset():
             input_image = image.copy()   
 
         # DEBUG
-        masked_image.save("masked_image.png")
-        input_image.save("input_image.png")
+        # masked_image.save("masked_image.png")
+        # input_image.save("input_image.png")
         
         # inpainting
         start_generating_time = time.time()
@@ -433,7 +433,7 @@ class AugmentDataset():
 
         # debug
         # augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image_{prompt}.png")
-        augmented_image.save(f"augmented_image.png")
+        # augmented_image.save(f"augmented_image.png")
         
         self.logger.info(f"Prompt: {prompt}")
         self.logger.info(f"Generation time: {generation_time}")
@@ -450,7 +450,7 @@ class AugmentDataset():
             new_image = augmented_image.resize((image.size[0], image.size[1]))
             # resized_augmented_image.save(f"{self.output_path}/{self.filename_img}/augmented_image_{prompt}.png")
         
-        new_image.save(f"new_image.png")
+        # new_image.save(f"new_image.png")
 
         return new_image, masked_image, random_x, random_y, box
     

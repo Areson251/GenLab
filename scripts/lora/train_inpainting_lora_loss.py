@@ -964,23 +964,31 @@ def parse_args():
     parser.add_argument(
         "--loss_alpha",
         type=float,
-        default=0.5,
+        default=0.6,
         help="The name of loss function. Default is mse, but you can use custom loss",
     )
 
     parser.add_argument(
         "--loss_beta",
         type=float,
-        default=0.5,
+        default=0.2,
         help="The name of loss function. Default is mse, but you can use custom loss",
     )
 
     parser.add_argument(
         "--loss_gamma",
         type=float,
+        default=0.2,
+        help="The name of loss function. Default is mse, but you can use custom loss",
+    )
+
+    parser.add_argument(
+        "--loss_tetta",
+        type=float,
         default=1e-6,
         help="The name of loss function. Default is mse, but you can use custom loss",
     )
+
 
     args = parser.parse_args()
     env_local_rank = int(os.environ.get("LOCAL_RANK", -1))
@@ -1492,6 +1500,7 @@ def main():
                     alpha = args.loss_alpha 
                     beta = args.loss_beta 
                     gamma = args.loss_gamma 
+                    tetta = args.loss_tetta 
 
                     loss_obj = F.mse_loss(model_pred.float(), noise.float(), reduction="mean")  # ||𝜖_{obj} - gt||
                     # loss_empty = F.mse_loss(model_pred.float(), remover_pred.float(), reduction="mean") # ||𝜖_{obj} - 𝜖_{empt}||
@@ -1500,11 +1509,20 @@ def main():
                                 model_pred.float() * mask,  # Учитываем только маскированную область
                                 remover_pred.float() * mask,
                                 reduction="sum"  
-                            ) / (mask.sum() + 1e-6) + gamma
-                    
-                    loss_empty = torch.clamp(loss_empty, max=0.05)
+                            ) / (mask.sum() + 1e-6) + tetta
 
-                    loss = alpha * loss_obj + beta / loss_empty
+                    loss_umasked = F.mse_loss(
+                                model_pred.float() * (1-mask),  # Учитываем только маскированную область
+                                remover_pred.float() * (1-mask),
+                                reduction="sum"  
+                            ) / ((1-mask).sum() + 1e-6) 
+                    
+
+                    # loss_empty = -torch.log(mse_term.clamp(min=1e-4)) + gamma 
+                    # loss_empty = torch.clamp(loss_empty, max=0.05)
+
+                    loss = alpha * loss_obj + beta * loss_empty + gamma * loss_umasked
+                    # loss = alpha * loss_obj + beta / loss_empty
                     # if global_step > 100:                 
                     #     loss = alpha * loss_obj + beta / loss_empty
                     # else:
