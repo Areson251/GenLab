@@ -1,7 +1,7 @@
 #!/bin/bash
 
-SOURCE_DIR="tuning_exps/sd2_boxes/YCOR.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_1500"
-TARGET_DIR="datasets/augmented/YCOR_taomr_loss-umasked-1500/images/train_objects_copy"
+SOURCE_DIR="tuning_exps/sd2_boxes/YCOR_val.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_4000"
+TARGET_DIR="datasets/augmented/YCOR_loss-umasked_4000/images/train_objects_copy"
 
 mkdir -p "$TARGET_DIR"
 

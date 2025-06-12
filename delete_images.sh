@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cd /home/docker_diffdepth/diff_depth_new/datasets/original/TAOMR/images/train_ycor_2objs_custom
+cd /home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_loss-umasked-1500/labels/train_objects_copy
 
 for file in t_YCOR_*; do
     if [ -f "$file" ]; then

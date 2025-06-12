@@ -26,35 +26,50 @@
 #             --output_path="datasets/original/TAOMR/val_objects" 
 
 
-python augment_dataset.py \
-        --images_path="datasets/original/YCOR/val/images" \
-        --annotation_path="datasets/original/YCOR/val/masks_road" \
-        --masks_path="custom_datasets/target_masks" \
-        --prompts_path="prompts/taomr_objects_augm.txt" \
-        --output_path="tuning_exps/sd2_boxes/YCOR.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_1500" \
-        --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-        --lora_chkpt="model_output/lora_loss-umasked_taomr_9_objs/checkpoint-1500" \
-        --padding=20 \
-        --guidance_scale=5 \
-        --device="cuda:1" \
-        --use_crops=True \
-        --seed=0 
-
 # python augment_dataset.py \
-#         --images_path="custom_datasets/scenes/pothole_scenes" \
-#         --annotation_path="custom_datasets/scenes/pothole_scenes_road.json" \
+#         --images_path="datasets/original/YCOR/val/images" \
+#         --annotation_path="datasets/original/YCOR/val/masks_road" \
 #         --masks_path="custom_datasets/target_masks" \
-#         --prompts_path="prompts/taomr_objects.txt" \
-#         --output_path="tuning_exps/sd2_boxes/pothole_scenes.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_4000" \
+#         --prompts_path="prompts/taomr_objects_augm.txt" \
+#         --output_path="tuning_exps/sd2_boxes/YCOR.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_1500" \
 #         --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
-#         --lora_chkpt="model_output/lora_loss-umasked_taomr_9_objs/checkpoint-4000" \
+#         --lora_chkpt="model_output/lora_loss-umasked_taomr_9_objs/checkpoint-1500" \
 #         --padding=20 \
 #         --guidance_scale=5 \
 #         --device="cuda:1" \
 #         --use_crops=True \
 #         --seed=0 
 
+python augment_dataset.py \
+        --images_path="datasets/original/YCOR/val/images" \
+        --annotation_path="datasets/original/YCOR/val/masks_road" \
+        --masks_path="custom_datasets/target_masks" \
+        --prompts_path="prompts/taomr_objects.txt" \
+        --output_path="tuning_exps/sd2_boxes/YCOR_val.augmented_gs-5_ckpt-taomr_9obj_mse_4000" \
+        --sd_chkpt="stabilityai/stable-diffusion-2-inpainting" \
+        --lora_chkpt="model_output/lora_mse_taomr_9_objs/checkpoint-4000" \
+        --padding=20 \
+        --guidance_scale=5 \
+        --device="cuda:0" \
+        --use_crops=True \
+        --seed=0 
 
+
+
+python scripts/utils/count_gen_metrics.py \
+        --dt_images_path="tuning_exps/sd2_boxes/taomr.augmented_gs-5_ckpt-taomr_9obj_loss-mse_4000" \
+        --gt_images_path="datasets/original/TAOMR/val_objects" \
+        --gt_annotation_path="datasets/original/TAOMR/val_9_objs_copy.json" \
+        --exp_name="MSE" 
+
+python scripts/utils/count_gen_metrics.py \
+        --dt_images_path="tuning_exps/sd2_boxes/taomr.augmented_gs-5_ckpt-taomr_9obj_loss-umasked_4000" \
+        --gt_images_path="datasets/original/TAOMR/val_objects" \
+        --gt_annotation_path="datasets/original/TAOMR/val_9_objs_copy.json" \
+        --exp_name="LOSS-UMASKED" 
+
+
+        
  
 # declare -a ckpt_arr=(8 10)
 # declare -a ckpt_arr=(5 10 15 20 25 30 35 40)

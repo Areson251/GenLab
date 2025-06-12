@@ -4,4 +4,3 @@ manhole
 firehose
 catch_basin
 poop
-bump

@@ -18,8 +18,8 @@ print(sys.executable)
 ultralytics.checks()
 
 
-DATA_PATH = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_loss-umasked-1500'
-# DATA_PATH = '/home/docker_diffdepth/diff_depth_new/datasets/original/TAOMR'
+# DATA_PATH = '/home/docker_diffdepth/diff_depth_new/datasets/augmented/YCOR_taomr_loss-umasked-1500'
+DATA_PATH = '/home/docker_diffdepth/diff_depth_new/datasets/original/TAOMR'
 
 
 model = YOLO("yolov8m.pt")
@@ -33,7 +33,6 @@ results = model.train(
     epochs=100, 
     imgsz=640,
     device="cuda:0",  
-    # device="cuda:1",  
     verbose=True,
 )
 
